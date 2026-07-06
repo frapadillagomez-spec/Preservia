@@ -21,12 +21,13 @@ type FieldDef = { key: string; label: string; placeholder: string };
 
 const CONFIG: Record<
   string,
-  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean }
+  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean }
 > = {
   volume: {
     title: "Volumen de solución",
-    subtitle: "Solución arterial estimada según el peso corporal",
+    subtitle: "Solución arterial estimada según el peso y el tipo de caso",
     icon: "flask-outline",
+    hasCaseType: true,
     fields: [{ key: "weight_kg", label: "Peso corporal (kg)", placeholder: "Ej. 70" }],
   },
   lbm: {
@@ -59,6 +60,7 @@ export default function Calculator() {
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [sex, setSex] = useState<"male" | "female">("male");
+  const [caseType, setCaseType] = useState<"normal" | "jaundice" | "edema">("normal");
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -79,6 +81,7 @@ export default function Calculator() {
       inputs[f.key] = v;
     }
     if (cfg.hasSex) inputs.sex = sex;
+    if (cfg.hasCaseType) inputs.case_type = caseType;
     return inputs;
   };
 
@@ -158,6 +161,33 @@ export default function Calculator() {
                   </Text>
                 </Pressable>
               ))}
+            </View>
+          )}
+
+          {cfg.hasCaseType && (
+            <View>
+              <Text style={styles.selectorLabel}>Tipo de caso</Text>
+              <View style={styles.segment}>
+                {([
+                  { key: "normal", label: "Normal" },
+                  { key: "jaundice", label: "Ictericia" },
+                  { key: "edema", label: "Edema" },
+                ] as const).map((c) => (
+                  <Pressable
+                    key={c.key}
+                    testID={`casetype-${c.key}`}
+                    onPress={() => {
+                      setCaseType(c.key);
+                      setResult(null);
+                    }}
+                    style={[styles.segmentBtn, caseType === c.key && styles.segmentActive]}
+                  >
+                    <Text style={[styles.segmentText, caseType === c.key && styles.segmentTextActive]}>
+                      {c.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           )}
 
@@ -260,6 +290,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  selectorLabel: {
+    color: colors.onSurfaceSecondary,
+    fontFamily: font.medium,
+    fontSize: fontSize.base,
+    marginBottom: spacing.xs,
   },
   segmentBtn: { flex: 1, alignItems: "center", paddingVertical: spacing.md, borderRadius: radius.sm },
   segmentActive: { backgroundColor: colors.surfaceInverse },

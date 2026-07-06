@@ -141,15 +141,27 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
     try:
         if calc_type == "volume":
             weight_kg = float(inputs["weight_kg"])
+            case_type = str(inputs.get("case_type", "normal")).lower()
+            # Adjustment factor for the injection volume based on tissue condition:
+            # jaundice needs greater saturation; edematous tissues already retain fluid.
+            factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
+            factor = factors.get(case_type, 1.0)
+            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
             weight_lb = weight_kg * 2.20462
-            gallons = weight_lb / 50.0
+            base_gallons = weight_lb / 50.0
+            gallons = base_gallons * factor
             liters = gallons * 3.78541
             results = {
                 "liters": round(liters, 2),
                 "gallons": round(gallons, 2),
                 "weight_kg": round(weight_kg, 1),
+                "case_type": labels.get(case_type, "Normal"),
+                "adjustment": f"x{factor}",
             }
-            summary = f"{results['liters']} L de solucion arterial (~{results['gallons']} gal)"
+            summary = (
+                f"{results['liters']} L de solucion arterial (~{results['gallons']} gal) "
+                f"- {results['case_type']}"
+            )
             return {"results": results, "summary": summary}
 
         if calc_type == "lbm":
