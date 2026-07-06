@@ -1,0 +1,43 @@
+{
+  "summary": "Preservia MVP end-to-end tested. Backend: 25/25 pytest cases pass (auth, calculators, cases CRUD, user isolation, calculations on case, notes, PDF report). Frontend: full mobile E2E flow succeeded via web preview — register -> cases empty state -> create case -> detail hub segmented tabs -> volume calc -> save to case -> note -> generate PDF (download triggered) -> logout via Perfil tab -> login again with test@preservia.com. Google auth endpoint verified to exist and reject invalid session_id (401); full Google OAuth loop cannot be automated. No blocking issues found. Two minor RN-Web deprecation warnings and one expo-file-system/legacy import to flag.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo-file-system", "issue": "Uses deprecated legacy API path 'expo-file-system/legacy' in /app/frontend/app/case/[id].tsx:18. Migrate to the new expo-file-system v19 API (writeAsStringAsync moved to new namespace) before it is removed."},
+      {"component": "StyleSheet shadow* props", "issue": "React Native Web warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Origin: FAB style in /app/frontend/app/(tabs)/index.tsx:255-260 (shadowColor/shadowOpacity/shadowRadius/shadowOffset). Non-blocking on native, but web console prints the warning."},
+      {"component": "props.pointerEvents", "issue": "React Native Web warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Origin is likely inside a library (safe-area-context / gesture-handler) so may be transitive; verify after next Expo minor upgrade."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_preservia_api.py",
+    "/app/test_reports/pytest/preservia_api.xml"
+  ],
+  "action_items": [
+    "Migrate away from 'expo-file-system/legacy' import in app/case/[id].tsx to the current expo-file-system API to avoid future breakage.",
+    "Replace shadow* props with boxShadow on the FAB (and any other places) to silence the RN-Web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py is a single 538-line module. It is still under the 700-line ceiling but is close; consider splitting into modules (auth, cases, notes, pdf) as it grows.",
+    "MongoDB _id is correctly excluded everywhere via projection {\"_id\": 0} and case_public(). Good.",
+    "Auth: bcrypt hashing + JWT with 30-day expiry via Authorization: Bearer header — clean.",
+    "PDF endpoint returns base64 JSON as specified; header verified as '%PDF' in tests.",
+    "Frontend: all URLs come from EXPO_PUBLIC_BACKEND_URL; no hardcoded values.",
+    "All interactive elements carry testID; tabs (Casos/Perfil) render correctly at 390x844 mobile viewport."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_preservia_api.py (new)",
+    "/app/test_reports/iteration_1.json (new)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% of automated E2E flow (register/login/case CRUD/calc/note/report/logout)"},
+  "seed_data_creation": "Two ephemeral users test_a_<uuid>@preservia.com and test_b_<uuid>@preservia.com created per pytest run for user-isolation checks; case fully deleted at end. Also one ephemeral UI user e2e_<uuid>@preservia.com from Playwright run (its case+note remain in DB and can be pruned).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite lives at /app/backend/tests/test_preservia_api.py — 25 tests covering auth (incl. duplicate 400, bad-password 401, no-token 401, invalid Google session 401), calculators (volume/lbm-male/lbm-female/concentration + 400 edges), cases CRUD, user isolation (user B gets 404 on user A's case), calc-on-case + delete, notes add/list/delete, PDF report (base64 decodes to '%PDF' header, >1KB). Reuse the same file for regression. Frontend testIDs are consistent: login-*, register-*, new-case-fab, case-name-input, tab-calc/notes/report, open-calc-<type>, calc-input-<key>, calc-compute-button, calc-save-button, note-text-input, save-note-button, generate-report-button, logout-button.",
+  "rca_of_issue": "No bug reproduced. Only style-level deprecation warnings surfaced from React Native Web."
+}
