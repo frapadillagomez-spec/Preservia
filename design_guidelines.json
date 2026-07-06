@@ -1,0 +1,157 @@
+{
+  "app_name": "Preservia",
+  "personality": "1 iOS-Native Clean (Adapted to DARK mode per user request for 'tonos oscuros')",
+  "personality_one_liner": "A sober, highly precise clinical workspace prioritizing data clarity, respect, and professional utility.",
+  "color": {
+    "surface": "#0F172A",
+    "onSurface": "#F8FAFC",
+    "surfaceSecondary": "#1E293B",
+    "onSurfaceSecondary": "#CBD5E1",
+    "surfaceTertiary": "#334155",
+    "onSurfaceTertiary": "#94A3B8",
+    "surfaceInverse": "#F8FAFC",
+    "onSurfaceInverse": "#0F172A",
+    "brand": "#64748B",
+    "brandPrimary": "#475569",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#334155",
+    "onBrandSecondary": "#E2E8F0",
+    "brandTertiary": "#1E293B",
+    "onBrandTertiary": "#94A3B8",
+    "success": "#064E3B",
+    "onSuccess": "#34D399",
+    "warning": "#78350F",
+    "onWarning": "#FBBF24",
+    "error": "#7F1D1D",
+    "onError": "#F87171",
+    "info": "#1E3A8A",
+    "onInfo": "#60A5FA",
+    "border": "#1E293B",
+    "borderStrong": "#334155",
+    "divider": "#1E293B"
+  },
+  "typography": {
+    "displayFontFamily": "Geist",
+    "textFontFamily": "Geist",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical breathing room for readability. Forms must have comfortable padding. Use Safe Area at screen root.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass on sticky headers when content scrolls behind",
+      "Use glass on the bottom tab bar",
+      "Use glass for sticky CTA button containers at the bottom of forms/calculators"
+    ],
+    "dont's": [
+      "Never use glass on data cards or calculator input fields",
+      "Avoid on list rows to keep the UI clinically clean"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Login",
+      "purpose": "Authenticate users securely with email/password or Google.",
+      "states": {
+        "loading": "Centered spinner over the auth form.",
+        "empty": "N/A",
+        "error": "Standard error toast or inline text above the submit button."
+      },
+      "layout": "Hero image (abstract_bg) at the top with a vertical gradient scrim (transparent to surface). Auth form sits in the lower half. Single-column inputs. 'Continue with Google' button outlined below primary login."
+    },
+    {
+      "name": "Cases List",
+      "purpose": "Primary workspace showing all private saved cases.",
+      "states": {
+        "loading": "Skeleton list rows.",
+        "empty": "Clipboard illustration centrally aligned + 'No cases logged yet' + 'New Case' primary CTA.",
+        "error": "Readable message + Retry button centered."
+      },
+      "layout": "Sticky header with Large Title ('Cases') and Search bar. List of cards. Each card uses single-column layout spanning full width (minus padding). Cards show Case Name, Date, and status. Sticky FAB (Floating Action Button) at bottom right for 'New Case'."
+    },
+    {
+      "name": "Case Detail Hub",
+      "purpose": "Centralized view for a single case, navigating between calculations, notes, and PDF report.",
+      "states": {
+        "loading": "Spinner centrally aligned.",
+        "empty": "N/A (structure is always present).",
+        "error": "Error loading case details + Retry button."
+      },
+      "layout": "Header with Case ID and Name. Sticky segmented control (Calculations, Notes, Report) directly below header. Scrollable content below. 'Calculations' tab shows a grid of available calculators. 'Notes' tab shows a chronological feed of notes + photo attachments. 'Report' tab shows a PDF preview card and a 'Generate/Share' button."
+    },
+    {
+      "name": "Calculator Form",
+      "purpose": "Perform specific technical calculations (e.g., Fluid Volume) and save to case.",
+      "states": {
+        "loading": "Spinner on the save button.",
+        "empty": "N/A",
+        "error": "Inline validation errors on input fields."
+      },
+      "layout": "Context display at the top (showing current formula/result) with dynamic font scaling (use Geist Mono for numbers). Standard form layout for inputs (Weight, Concentration, etc.). Labels above inputs. Sticky 'Save to Case' CTA pinned to the bottom above the home indicator."
+    }
+  ],
+  "images": {
+    "abstract_bg": {
+      "url": "https://images.unsplash.com/photo-1685973323988-666a38e0acc2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBjYWxjdWxhdG9yJTIwYXBwJTIwYWJzdHJhY3QlMjBiYWNrZ3JvdW5kJTIwZGFyayUyMGJsdWUlMjBncmF5fGVufDB8fHx8MTc4MzM3NzcwNHww&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1685973323988-666a38e0acc2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBjYWxjdWxhdG9yJTIwYXBwJTIwYWJzdHJhY3QlMjBiYWNrZ3JvdW5kJTIwZGFyayUyMGJsdWUlMjBncmF5fGVufDB8fHx8MTc4MzM3NzcwNHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract dark blue-gray layered background for auth/hero screens"
+    },
+    "empty_clipboard": {
+      "url": "https://images.unsplash.com/photo-1651760680066-db9d32bd0357?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBtZWRpY2FsJTIwY2xpcGJvYXJkJTIwbm90ZXMlMjBlbXB0eSUyMHN0YXRlJTIwdHJhbnNwYXJlbnR8ZW58MHx8fHwxNzgzMzc3NzA0fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Minimalist white clipboard representing empty notes/cases"
+    }
+  },
+  "haptics": {
+    "events": {
+      "button_press": "light",
+      "tab_change": "light",
+      "calculator_key_press": "light",
+      "save_success": "success",
+      "error": "error"
+    }
+  },
+  "instructions_to_main_agent": [
+    "COLOR STRICTNESS: The user specifically requested a 'azul-gris tone preferred' (dark blue-gray). I have explicitly mapped the surface and brand tokens to a Slate (blue-gray) palette. This overrides the standard NO_BLUES rule because the user specifically requested it.",
+    "Use Geist font for all text and Geist Mono strictly for any calculator inputs and result displays to ensure character width consistency.",
+    "For the Case Detail Hub, implement a sticky Segmented Control below the header to toggle between Calculations, Notes, and Report.",
+    "Calculators should have clear, large results (dynamic scaling) and standard form inputs with labels above the fields.",
+    "Implement safe areas accurately. Use fixed containers for the 'Save to Case' CTA so it does not hide behind the keyboard or require scrolling to reach.",
+    "For avatars/initials of cases, since we couldn't fetch a logo, fallback to an initials avatar inside a 'brandTertiary' tinted circle."
+  ]
+}
