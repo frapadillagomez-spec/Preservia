@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import { useAuth } from "@/src/context/AuthContext";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
+import { BrandLogo } from "@/src/components/BrandLogo";
 import { colors, font, fontSize, spacing } from "@/src/theme";
 
 const HERO =
@@ -59,7 +60,7 @@ export default function Login() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.brandBlock}>
-            <Text style={styles.brand}>PRESERVIA</Text>
+            <BrandLogo height={40} />
             <Text style={styles.tagline}>Gestión profesional de casos de tanatopraxia</Text>
           </View>
 
@@ -125,12 +126,6 @@ const styles = StyleSheet.create({
   scrim: { position: "absolute", top: 0, left: 0, right: 0, height: 360 },
   scroll: { flexGrow: 1, justifyContent: "flex-end", padding: spacing.xl, paddingTop: 200 },
   brandBlock: { marginBottom: spacing.xl },
-  brand: {
-    color: colors.onSurface,
-    fontFamily: font.bold,
-    fontSize: 32,
-    letterSpacing: 4,
-  },
   tagline: {
     color: colors.onSurfaceSecondary,
     fontFamily: font.regular,

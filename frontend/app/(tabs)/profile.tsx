@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { BrandBar } from "@/src/components/BrandLogo";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
@@ -13,6 +14,7 @@ export default function Profile() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <BrandBar />
       <View style={styles.header}>
         <Text style={styles.title}>Perfil</Text>
       </View>

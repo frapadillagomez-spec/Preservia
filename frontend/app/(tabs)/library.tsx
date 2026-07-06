@@ -19,6 +19,7 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { REFERENCE } from "@/src/data/reference";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { BrandBar } from "@/src/components/BrandLogo";
 
 type Doc = { doc_id: string; title: string; filename: string; size: number; created_at: string };
 type Tab = "reference" | "documents";
@@ -124,6 +125,7 @@ export default function Library() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <BrandBar />
       <View style={styles.header}>
         <Text style={styles.title}>Biblioteca</Text>
       </View>

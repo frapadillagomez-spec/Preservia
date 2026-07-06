@@ -17,6 +17,7 @@ import * as Haptics from "expo-haptics";
 
 import { api } from "@/src/api";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { BrandBar } from "@/src/components/BrandLogo";
 
 const EMPTY_IMG =
   "https://images.unsplash.com/photo-1651760680066-db9d32bd0357?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBtZWRpY2FsJTIwY2xpcGJvYXJkJTIwbm90ZXMlMjBlbXB0eSUyMHN0YXRlJTIwdHJhbnNwYXJlbnR8ZW58MHx8fHwxNzgzMzc3NzA0fDA&ixlib=rb-4.1.0&q=85";
@@ -117,6 +118,7 @@ export default function CasesList() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <BrandBar />
       <View style={styles.header}>
         <Text style={styles.title}>Casos</Text>
         <View style={styles.search}>

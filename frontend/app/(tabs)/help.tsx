@@ -6,6 +6,7 @@ import * as Haptics from "expo-haptics";
 
 import { useToast } from "@/src/components/Toast";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { BrandBar } from "@/src/components/BrandLogo";
 
 const SUPPORT_EMAIL = "soporte@preservia.app";
 
@@ -66,6 +67,7 @@ export default function Help() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <BrandBar />
       <View style={styles.header}>
         <Text style={styles.title}>Ayuda</Text>
       </View>
