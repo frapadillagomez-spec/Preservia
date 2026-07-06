@@ -246,7 +246,23 @@ export default function CaseDetail() {
       {/* Content */}
       {tab === "calc" && (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionLabel}>Calculadoras</Text>
+          <Text style={styles.sectionLabel}>Asistente de cálculo</Text>
+          <Pressable
+            testID="open-wizard"
+            style={({ pressed }) => [styles.wizardTile, pressed && { opacity: 0.9 }]}
+            onPress={() => router.push(`/calculator/wizard?caseId=${id}`)}
+          >
+            <View style={styles.wizardIcon}>
+              <Ionicons name="git-branch-outline" size={24} color={colors.onSurfaceInverse} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.wizardTitle}>Cálculo de inyección</Text>
+              <Text style={styles.wizardSub}>Masa magra → dilución → volumen (C1·V1=C2·V2)</Text>
+            </View>
+            <Ionicons name="arrow-forward" size={20} color={colors.onSurface} />
+          </Pressable>
+
+          <Text style={styles.sectionLabel}>Calculadoras individuales</Text>
           <View style={styles.calcGrid}>
             {CALCULATORS.map((c) => (
               <Pressable
@@ -443,6 +459,26 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   calcGrid: { gap: spacing.md },
+  wizardTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  wizardIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceInverse,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  wizardTitle: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg },
+  wizardSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2 },
   calcTile: {
     flexDirection: "row",
     alignItems: "center",

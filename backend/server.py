@@ -196,6 +196,50 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             summary = f"Masa magra: {results['lbm_kg']} kg"
             return {"results": results, "summary": summary}
 
+        if calc_type == "injection":
+            # Chained injection-volume calc: lean body mass -> total solution
+            # volume (literature ~1 gal / 50 lb ≈ 167 mL/kg) -> C1·V1 = C2·V2
+            # where C1 = stock fluid index, C2 = desired index, V2 = total, V1 = concentrate.
+            weight_kg = float(inputs["weight_kg"])
+            height_cm = float(inputs["height_cm"])
+            sex = str(inputs.get("sex", "male")).lower()
+            case_type = str(inputs.get("case_type", "normal")).lower()
+            c1 = float(inputs["fluid_index_pct"])
+            c2 = float(inputs["desired_index_pct"])
+            if c1 <= 0:
+                raise ValueError("El indice del fluido debe ser mayor que 0")
+            if c2 <= 0:
+                raise ValueError("El indice deseado debe ser mayor que 0")
+            if c2 > c1:
+                raise ValueError("El indice deseado no puede superar el indice del fluido")
+            if sex.startswith("f"):
+                lbm = 0.252 * weight_kg + 0.473 * height_cm - 48.3
+            else:
+                lbm = 0.407 * weight_kg + 0.267 * height_cm - 19.2
+            lbm = max(lbm, 0)
+            factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
+            factor = factors.get(case_type, 1.0)
+            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
+            total_ml = (lbm * 2.20462 / 50.0) * 3785.41 * factor
+            concentrate_ml = (c2 / c1) * total_ml
+            water_ml = max(total_ml - concentrate_ml, 0)
+            results = {
+                "lbm_kg": round(lbm, 1),
+                "total_l": round(total_ml / 1000.0, 2),
+                "total_ml": round(total_ml, 0),
+                "concentrate_ml": round(concentrate_ml, 0),
+                "water_ml": round(water_ml, 0),
+                "desired_index_pct": c2,
+                "fluid_index_pct": c1,
+                "case_type": labels.get(case_type, "Normal"),
+                "adjustment": f"x{factor}",
+            }
+            summary = (
+                f"{results['total_l']} L totales (masa magra {results['lbm_kg']} kg): "
+                f"{results['concentrate_ml']:.0f} mL concentrado + {results['water_ml']:.0f} mL agua"
+            )
+            return {"results": results, "summary": summary}
+
         if calc_type == "concentration":
             total_l = float(inputs["total_solution_l"])
             desired = float(inputs["desired_index_pct"])
@@ -222,6 +266,7 @@ CALC_LABELS = {
     "volume": "Volumen de solucion",
     "lbm": "Masa magra corporal",
     "concentration": "Concentracion / Dilucion",
+    "injection": "Volumen de inyeccion",
 }
 
 
