@@ -9,6 +9,9 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar } from "@/src/components/BrandLogo";
 
 const SUPPORT_EMAIL = "soporte@preservia.app";
+const WEBSITE_URL = "https://www.preservia.mx";
+const WHATSAPP_NUMBER = "5548708776";
+const WHATSAPP_URL = "https://wa.me/52" + WHATSAPP_NUMBER;
 
 const FAQ = [
   {
@@ -65,6 +68,14 @@ export default function Help() {
     }
   };
 
+  const openLink = async (url: string, fallback: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      toast.show(fallback, "info");
+    }
+  };
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <BrandBar />
@@ -114,6 +125,36 @@ export default function Help() {
           <View style={{ flex: 1 }}>
             <Text style={styles.supportTitle}>Escríbenos</Text>
             <Text style={styles.supportSub}>{SUPPORT_EMAIL}</Text>
+          </View>
+          <Ionicons name="open-outline" size={20} color={colors.onSurfaceTertiary} />
+        </Pressable>
+
+        <Pressable
+          testID="contact-whatsapp-button"
+          onPress={() => openLink(WHATSAPP_URL, `WhatsApp: ${WHATSAPP_NUMBER}`)}
+          style={[styles.supportCard, { marginTop: spacing.sm }]}
+        >
+          <View style={[styles.supportIcon, { backgroundColor: colors.successBg }]}>
+            <Ionicons name="logo-whatsapp" size={22} color={colors.success} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supportTitle}>WhatsApp</Text>
+            <Text style={styles.supportSub}>55 4870 8776</Text>
+          </View>
+          <Ionicons name="open-outline" size={20} color={colors.onSurfaceTertiary} />
+        </Pressable>
+
+        <Pressable
+          testID="website-button"
+          onPress={() => openLink(WEBSITE_URL, "www.preservia.mx")}
+          style={[styles.supportCard, { marginTop: spacing.sm }]}
+        >
+          <View style={[styles.supportIcon, { backgroundColor: colors.brandTertiary }]}>
+            <Ionicons name="globe-outline" size={22} color={colors.onSurface} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.supportTitle}>Sitio web</Text>
+            <Text style={styles.supportSub}>www.preservia.mx</Text>
           </View>
           <Ionicons name="open-outline" size={20} color={colors.onSurfaceTertiary} />
         </Pressable>
