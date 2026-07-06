@@ -21,13 +21,14 @@ type FieldDef = { key: string; label: string; placeholder: string };
 
 const CONFIG: Record<
   string,
-  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean }
+  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean }
 > = {
   volume: {
     title: "Volumen de solución",
-    subtitle: "Solución arterial estimada según el peso y el tipo de caso",
+    subtitle: "Solución arterial estimada según el peso o la masa magra y el tipo de caso",
     icon: "flask-outline",
     hasCaseType: true,
+    hasBasis: true,
     fields: [{ key: "weight_kg", label: "Peso corporal (kg)", placeholder: "Ej. 70" }],
   },
   lbm: {
@@ -61,6 +62,7 @@ export default function Calculator() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [sex, setSex] = useState<"male" | "female">("male");
   const [caseType, setCaseType] = useState<"normal" | "jaundice" | "edema">("normal");
+  const [basis, setBasis] = useState<"total" | "lean">("total");
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -82,6 +84,15 @@ export default function Calculator() {
     }
     if (cfg.hasSex) inputs.sex = sex;
     if (cfg.hasCaseType) inputs.case_type = caseType;
+    if (cfg.hasBasis) {
+      inputs.basis = basis;
+      if (basis === "lean") {
+        const h = parseFloat((values["height_cm"] || "").replace(",", "."));
+        if (isNaN(h)) return null;
+        inputs.height_cm = h;
+        inputs.sex = sex;
+      }
+    }
     return inputs;
   };
 
@@ -205,6 +216,66 @@ export default function Calculator() {
               placeholder={f.placeholder}
             />
           ))}
+
+          {cfg.hasBasis && (
+            <View>
+              <Text style={styles.selectorLabel}>Base de cálculo</Text>
+              <View style={styles.segment}>
+                {([
+                  { key: "total", label: "Peso total" },
+                  { key: "lean", label: "Masa magra" },
+                ] as const).map((b) => (
+                  <Pressable
+                    key={b.key}
+                    testID={`basis-${b.key}`}
+                    onPress={() => {
+                      setBasis(b.key);
+                      setResult(null);
+                    }}
+                    style={[styles.segmentBtn, basis === b.key && styles.segmentActive]}
+                  >
+                    <Text style={[styles.segmentText, basis === b.key && styles.segmentTextActive]}>
+                      {b.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {cfg.hasBasis && basis === "lean" && (
+            <>
+              <Field
+                testID="calc-input-height_cm"
+                label="Estatura (cm)"
+                value={values["height_cm"] || ""}
+                onChangeText={(t) => {
+                  setValues((v) => ({ ...v, height_cm: t }));
+                  setResult(null);
+                }}
+                keyboardType="decimal-pad"
+                placeholder="Ej. 172"
+              />
+              <Text style={styles.selectorLabel}>Sexo</Text>
+              <View style={styles.segment}>
+                {(["male", "female"] as const).map((s) => (
+                  <Pressable
+                    key={s}
+                    testID={`sex-${s}`}
+                    onPress={() => {
+                      setSex(s);
+                      setResult(null);
+                    }}
+                    style={[styles.segmentBtn, sex === s && styles.segmentActive]}
+                  >
+                    <Text style={[styles.segmentText, sex === s && styles.segmentTextActive]}>
+                      {s === "male" ? "Masculino" : "Femenino"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
 
           <Button
             testID="calc-compute-button"

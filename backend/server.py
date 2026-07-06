@@ -142,14 +142,25 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
         if calc_type == "volume":
             weight_kg = float(inputs["weight_kg"])
             case_type = str(inputs.get("case_type", "normal")).lower()
-            # Adjustment factor for the injection volume based on tissue condition:
-            # jaundice needs greater saturation; edematous tissues already retain fluid.
+            basis = str(inputs.get("basis", "total")).lower()
+            # Effective weight used for the solution estimate. Lean body mass
+            # gives a more accurate requirement since fat tissue is less vascular.
+            lbm_kg = None
+            if basis == "lean":
+                sex = str(inputs.get("sex", "male")).lower()
+                height_cm = float(inputs["height_cm"])
+                if sex.startswith("f"):
+                    lbm_kg = 0.252 * weight_kg + 0.473 * height_cm - 48.3
+                else:
+                    lbm_kg = 0.407 * weight_kg + 0.267 * height_cm - 19.2
+                effective_kg = max(lbm_kg, 0)
+            else:
+                effective_kg = weight_kg
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
             factor = factors.get(case_type, 1.0)
             labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
-            weight_lb = weight_kg * 2.20462
-            base_gallons = weight_lb / 50.0
-            gallons = base_gallons * factor
+            effective_lb = effective_kg * 2.20462
+            gallons = (effective_lb / 50.0) * factor
             liters = gallons * 3.78541
             results = {
                 "liters": round(liters, 2),
@@ -157,10 +168,14 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 "weight_kg": round(weight_kg, 1),
                 "case_type": labels.get(case_type, "Normal"),
                 "adjustment": f"x{factor}",
+                "basis": "Masa magra" if basis == "lean" else "Peso total",
             }
+            if lbm_kg is not None:
+                results["lbm_kg"] = round(lbm_kg, 1)
+            basis_txt = f" (masa magra {results.get('lbm_kg')} kg)" if lbm_kg is not None else ""
             summary = (
                 f"{results['liters']} L de solucion arterial (~{results['gallons']} gal) "
-                f"- {results['case_type']}"
+                f"- {results['case_type']}{basis_txt}"
             )
             return {"results": results, "summary": summary}
 
