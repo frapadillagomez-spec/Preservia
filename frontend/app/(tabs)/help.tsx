@@ -8,7 +8,7 @@ import { useToast } from "@/src/components/Toast";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar } from "@/src/components/BrandLogo";
 
-const SUPPORT_EMAIL = "soporte@preservia.app";
+const SUPPORT_EMAIL = "francisco.padilla@preservia.mx";
 const WEBSITE_URL = "https://www.preservia.mx";
 const WHATSAPP_NUMBER = "5548708776";
 const WHATSAPP_URL = "https://wa.me/52" + WHATSAPP_NUMBER;
