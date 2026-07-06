@@ -22,7 +22,10 @@ Herramienta móvil profesional para embalsamadores/tanatopraxia que combina cál
 - CRUD de casos, cálculos guardados por caso, notas con fotos base64.
 - Endpoint `/api/calculate` y generación de PDF profesional (`/api/cases/{id}/report`).
 - UI completa: login/registro, lista de casos con búsqueda/estado vacío/FAB, hub de caso, calculadoras con resultado en vivo, composer de notas con cámara/galería, pantalla de reporte, perfil/logout.
-- Verificado: 25/25 pruebas backend + flujo frontend end-to-end.
+- **Biblioteca** (pestaña): Referencia técnica curada (fórmulas explicadas + tabla de índices recomendados) y "Mis documentos" (subida/listado/apertura/borrado de PDFs propios vía `/api/library/documents`).
+- **Ayuda** (pestaña): guía rápida de uso, FAQ acordeón y contacto de soporte por email (mailto).
+- Barra inferior de 4 pestañas: Casos · Biblioteca · Ayuda · Perfil.
+- Verificado: 25/25 pruebas backend + flujo frontend end-to-end + endpoints de biblioteca (curl) + pantallas (screenshots).
 
 ## Backlog / Next
 - P1: Migrar `expo-file-system/legacy` → API v19; reemplazar `shadow*` por `boxShadow` en web.

@@ -78,6 +78,12 @@ class NoteInput(BaseModel):
     photos: List[str] = Field(default_factory=list)  # base64 data
 
 
+class DocumentInput(BaseModel):
+    title: str
+    filename: str
+    pdf_base64: str
+
+
 # ----------------------------- Helpers -----------------------------
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -506,6 +512,51 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
     return {"filename": f"Preservia_{safe}.pdf", "pdf_base64": b64, "mime": "application/pdf"}
 
 
+# ----------------------------- Library documents -----------------------------
+@api_router.post("/library/documents")
+async def add_document(data: DocumentInput, user: Dict[str, Any] = Depends(get_current_user)):
+    size = int(len(data.pdf_base64) * 3 / 4)  # approx bytes from base64
+    doc = {
+        "doc_id": f"doc_{uuid.uuid4().hex[:12]}",
+        "user_id": user["user_id"],
+        "title": data.title,
+        "filename": data.filename,
+        "pdf_base64": data.pdf_base64,
+        "size": size,
+        "created_at": now_iso(),
+    }
+    await db.documents.insert_one(dict(doc))
+    doc.pop("pdf_base64", None)
+    return {"document": doc}
+
+
+@api_router.get("/library/documents")
+async def list_documents(user: Dict[str, Any] = Depends(get_current_user)):
+    docs = await db.documents.find(
+        {"user_id": user["user_id"]}, {"_id": 0, "pdf_base64": 0}
+    ).sort("created_at", -1).to_list(500)
+    return {"documents": docs}
+
+
+@api_router.get("/library/documents/{doc_id}")
+async def get_document(doc_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    d = await db.documents.find_one(
+        {"doc_id": doc_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {"document": d}
+
+
+@api_router.delete("/library/documents/{doc_id}")
+async def delete_document(doc_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    d = await db.documents.find_one({"doc_id": doc_id, "user_id": user["user_id"]})
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await db.documents.delete_one({"doc_id": doc_id})
+    return {"ok": True}
+
+
 @api_router.get("/")
 async def root():
     return {"message": "Preservia API"}
@@ -529,6 +580,7 @@ async def startup():
     await db.cases.create_index("user_id")
     await db.cases.create_index("case_id", unique=True)
     await db.notes.create_index("case_id")
+    await db.documents.create_index("user_id")
     logger.info("Preservia API ready")
 
 
