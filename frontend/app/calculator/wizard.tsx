@@ -309,7 +309,15 @@ export default function Wizard() {
                       <Text style={styles.resultNum}>{result.results.concentrate_ml} mL</Text>
                     </View>
                     <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>agua</Text>
+                      <Text style={styles.resultKey}>formaldehído</Text>
+                      <Text style={styles.resultNum}>{result.results.formaldehyde_ml} mL</Text>
+                    </View>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>agua inyección</Text>
+                      <Text style={styles.resultNum}>{result.results.water_injection_ml} mL</Text>
+                    </View>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>agua a diluir</Text>
                       <Text style={styles.resultNum}>{result.results.water_ml} mL</Text>
                     </View>
                     <View style={styles.resultItem}>

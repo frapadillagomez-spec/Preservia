@@ -233,12 +233,18 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             v2_per_bottle_ml = (c1 * 473.0) / c2
             recommended_bottles = recommended_ml / v2_per_bottle_ml if v2_per_bottle_ml > 0 else 0
             bottles = concentrate_ml / 473.0
+            # Composition of the injected solution: the formaldehyde comes from the
+            # concentrate (C1% of V1); the rest of V2 is water.
+            formaldehyde_ml = (c1 / 100.0) * concentrate_ml
+            water_injection_ml = max(total_ml - formaldehyde_ml, 0)
             results = {
                 "lbm_kg": round(lbm, 1),
                 "total_l": round(total_ml / 1000.0, 2),
                 "total_ml": round(total_ml, 0),
                 "concentrate_ml": round(concentrate_ml, 0),
                 "water_ml": round(water_ml, 0),
+                "formaldehyde_ml": round(formaldehyde_ml, 0),
+                "water_injection_ml": round(water_injection_ml, 0),
                 "bottles": round(bottles, 2),
                 "recommended_l": round(recommended_ml / 1000.0, 2),
                 "recommended_bottles": round(recommended_bottles, 1),
@@ -248,9 +254,8 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 "adjustment": f"x{factor}",
             }
             summary = (
-                f"V2 = {results['total_l']} L: {results['concentrate_ml']:.0f} mL concentrado (V1) + "
-                f"{results['water_ml']:.0f} mL agua - {results['case_type']} (x{factor}): "
-                f"recomendado ~{results['recommended_l']} L (~{results['recommended_bottles']} botellas)"
+                f"V2 = {results['total_l']} L: formaldehido {results['formaldehyde_ml']:.0f} mL + "
+                f"agua {results['water_injection_ml']:.0f} mL - {results['case_type']} (x{factor})"
             )
             return {"results": results, "summary": summary}
 
