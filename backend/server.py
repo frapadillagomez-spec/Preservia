@@ -224,8 +224,9 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
             factor = factors.get(case_type, 1.0)
             labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
-            # C1·V1 = C2·V2  ->  V2 = C1·V1 / C2
-            total_ml = (c1 * concentrate_ml) / c2
+            # C1·V1 = C2·V2  ->  V2 = C1·V1 / C2, adjusted by case-type factor
+            base_total_ml = (c1 * concentrate_ml) / c2
+            total_ml = base_total_ml * factor
             water_ml = max(total_ml - concentrate_ml, 0)
             # Case-type factor adjusts the volume the body needs (lean-mass reference)
             recommended_ml = (lbm * 2.20462 / 50.0) * 3785.41 * factor
