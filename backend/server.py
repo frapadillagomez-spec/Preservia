@@ -668,6 +668,7 @@ async def add_document(data: DocumentInput, user: Dict[str, Any] = Depends(get_c
         "created_at": now_iso(),
     }
     await db.documents.insert_one(dict(doc))
+    doc.pop("grid_id", None)
     return {"document": doc}
 
 
@@ -721,6 +722,7 @@ async def add_catalog_document(data: CatalogInput, user: Dict[str, Any] = Depend
         "created_at": now_iso(),
     }
     await db.catalog.insert_one(dict(doc))
+    doc.pop("grid_id", None)
     return {"document": doc}
 
 
