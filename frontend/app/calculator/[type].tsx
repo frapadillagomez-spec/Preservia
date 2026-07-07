@@ -1,13 +1,11 @@
 import { useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -141,9 +139,14 @@ export default function Calculator() {
       </View>
       <Text style={styles.subtitle}>{cfg.subtitle}</Text>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {result && (
+      <KeyboardAwareScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={24}
+        showsVerticalScrollIndicator={false}
+      >
+        {result && (
             <View testID="calc-result" style={styles.resultCard}>
               <Text style={styles.resultLabel}>Resultado</Text>
               <Text style={styles.resultValue}>{result.summary}</Text>
@@ -285,8 +288,7 @@ export default function Calculator() {
             onPress={calculate}
             loading={calculating}
           />
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
         <Button

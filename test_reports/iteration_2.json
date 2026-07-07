@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only re-test of the estatura (height) input bug fix using react-native-keyboard-controller + KeyboardAwareScrollView. All three affected surfaces verified end-to-end on the Expo web preview at 390x844: (1) Wizard 'Cálculo de inyección' — Step 1 Estatura (wiz-height=172) and Peso (wiz-weight=70) accept typed input, wiz-compute-lbm produces LBM 55.2 kg (wiz-lbm-result); Step 2 C2=2, C1=25, V1 default 473, ratio computed; Step 3 wiz-compute-volume returns V2 5.91 L with formaldehído 118 mL and agua inyección 5794 mL; wiz-save persists both calcs (verified via toast 'Cálculos guardados en el caso' and Cálculos guardados (2) appearing in case detail). (2) Standalone LBM calculator (open-calc-lbm) — calc-input-height_cm and calc-input-weight_kg accept input, calc-compute-button returns 53.9 kg, calc-save-button saves. (3) Standalone Volume calculator (open-calc-volume) with basis 'Masa magra' (basis-lean) — reveals calc-input-height_cm and sex selector; height '172' accepted, compute returns 9.22 L and save works. Login (test@preservia.com/secret123), case creation (new-case-fab -> case-name-input -> create-case-button), and modal navigation all functional. Height/estatura bug is CONFIRMED FIXED — no regression detected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "React Native Web warning still logged: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking; already flagged in iteration_1."},
+      {"component": "props.pointerEvents", "issue": "React Native Web warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Emitted after login; likely transitive from a dependency. Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_preservia_api.py",
+    "/app/test_reports/pytest/preservia_api.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional: address the two remaining React Native Web deprecation warnings (shadow* -> boxShadow, and any local pointerEvents prop usage)."
+  ],
+  "critical_code_review_comments": [
+    "wizard.tsx and calculator/[type].tsx correctly wrap inputs in KeyboardAwareScrollView from react-native-keyboard-controller and use keyboardShouldPersistTaps='handled' + bottomOffset=24 — the recommended pattern.",
+    "KeyboardProvider is mounted at the root in _layout.tsx above SafeAreaProvider, which is the correct placement for react-native-keyboard-controller.",
+    "All input Fields carry stable testIDs; state resets (setLbm(null)/setResult(null)) on edits are appropriate to force re-computation."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not re-tested (unchanged this iteration)", "frontend": "100% (wizard 3-step flow + LBM calc + Volume/lean calc + save)"},
+  "seed_data_creation": "One ephemeral case 'TEST_Wizard_Case' created under test@preservia.com with 2 saved calculations (LBM, injection). It can be pruned.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Height/estatura input bug (report iteration_2) is fixed. Wizard testIDs: wiz-weight, wiz-height, wiz-sex-male/female, wiz-compute-lbm, wiz-lbm-result, wiz-next-0, wiz-c2, wiz-c1, wiz-v1, wiz-ratio-result, wiz-next-1, wiz-casetype-normal/jaundice/edema, wiz-compute-volume, wiz-volume-result, wiz-save, wiz-back, wizard-close. Standalone calculators use calc-input-<key> (e.g. calc-input-height_cm, calc-input-weight_kg), sex-male/female, casetype-*, basis-total/lean, calc-compute-button, calc-save-button. Entry points from case detail Calc tab: open-wizard, open-calc-lbm, open-calc-volume, open-calc-concentration.",
+  "rca_of_issue": "Original bug: On mobile the on-screen keyboard covered the Estatura TextInput and the previous KeyboardAvoidingView + ScrollView combo did not scroll the focused field into view, so the user perceived the field as un-editable. Fix (already applied by main agent): (a) mount KeyboardProvider at root in app/_layout.tsx, and (b) replace KeyboardAvoidingView+ScrollView with KeyboardAwareScrollView from react-native-keyboard-controller in app/calculator/wizard.tsx and app/calculator/[type].tsx, with keyboardShouldPersistTaps='handled' and bottomOffset=24. Verified on Expo web preview: page.fill on wiz-height and calc-input-height_cm returns the exact typed value and downstream computations succeed."
+}
