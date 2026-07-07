@@ -35,6 +35,7 @@ export default function Wizard() {
   // step 2 - dilution
   const [c2, setC2] = useState(""); // desired index
   const [c1, setC1] = useState(""); // fluid index (stock)
+  const [v1, setV1] = useState("473"); // concentrate volume mL (16 fl oz bottle)
   // step 3 - volume
   const [caseType, setCaseType] = useState<"normal" | "jaundice" | "edema">("normal");
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
@@ -84,6 +85,7 @@ export default function Wizard() {
           case_type: caseType,
           desired_index_pct: num(c2),
           fluid_index_pct: num(c1),
+          concentrate_ml: num(v1),
         },
       });
       setResult(resp);
@@ -106,6 +108,7 @@ export default function Wizard() {
           case_type: caseType,
           desired_index_pct: num(c2),
           fluid_index_pct: num(c1),
+          concentrate_ml: num(v1),
         },
       });
       toast.show("Cálculos guardados en el caso", "success");
@@ -233,6 +236,20 @@ export default function Wizard() {
                 keyboardType="decimal-pad"
                 placeholder="Ej. 25"
               />
+              <Field
+                testID="wiz-v1"
+                label="Volumen de concentrado V1 (mL)"
+                value={v1}
+                onChangeText={(t) => {
+                  setV1(t);
+                  setResult(null);
+                }}
+                keyboardType="decimal-pad"
+                placeholder="473 (botella 16 oz)"
+              />
+              <Text style={styles.hintLine}>
+                V1 fijo en 473 mL (botella comercial de 16 oz fl). Puedes editarlo (p. ej. 946 mL = 2 botellas).
+              </Text>
               {ratio && (
                 <View testID="wiz-ratio-result" style={styles.resultCard}>
                   <Text style={styles.resultLabel}>Relación de dilución</Text>
@@ -251,7 +268,7 @@ export default function Wizard() {
           {step === 2 && (
             <>
               <Text style={styles.stepTitle}>Paso 3 · Volumen de solución</Text>
-              <Text style={styles.stepSub}>Resultado final: V2 desde la masa magra y desglose con C1·V1=C2·V2.</Text>
+              <Text style={styles.stepSub}>Resultado final: con V1 (concentrado) y C1·V1=C2·V2 se obtiene el volumen total V2.</Text>
               <Text style={styles.selectorLabel}>Tipo de caso</Text>
               <View style={styles.segment}>
                 {([
@@ -288,7 +305,7 @@ export default function Wizard() {
                   <Text style={styles.resultValue}>{result.results.total_l} L</Text>
                   <View style={styles.resultGrid}>
                     <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>concentrado</Text>
+                      <Text style={styles.resultKey}>V1 concentrado</Text>
                       <Text style={styles.resultNum}>{result.results.concentrate_ml} mL</Text>
                     </View>
                     <View style={styles.resultItem}>
@@ -296,10 +313,17 @@ export default function Wizard() {
                       <Text style={styles.resultNum}>{result.results.water_ml} mL</Text>
                     </View>
                     <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>botellas</Text>
+                      <Text style={styles.resultNum}>{result.results.bottles}</Text>
+                    </View>
+                    <View style={styles.resultItem}>
                       <Text style={styles.resultKey}>masa magra</Text>
                       <Text style={styles.resultNum}>{result.results.lbm_kg} kg</Text>
                     </View>
                   </View>
+                  <Text style={styles.resultHint}>
+                    Recomendado por masa magra: ~{result.results.recommended_l} L totales.
+                  </Text>
                 </View>
               )}
             </>
@@ -379,6 +403,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingTop: 0 },
   stepTitle: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg, marginBottom: spacing.xs },
   stepSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.base, marginBottom: spacing.lg, lineHeight: 20 },
+  hintLine: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: -spacing.sm, marginBottom: spacing.md, lineHeight: 18 },
   selectorLabel: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base, marginBottom: spacing.xs },
   segment: {
     flexDirection: "row",
