@@ -10,10 +10,11 @@ from typing import List, Optional, Any, Dict
 import jwt
 import httpx
 import bcrypt
+from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, Field, EmailStr
 
 from reportlab.lib.pagesizes import A4
@@ -30,6 +31,7 @@ load_dotenv(ROOT_DIR / ".env")
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
+fs = AsyncIOMotorGridFSBucket(db, bucket_name="pdfs")
 
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
@@ -150,6 +152,38 @@ async def get_current_admin(user: Dict[str, Any] = Depends(get_current_user)) ->
     if user.get("email", "").lower() not in ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="Requiere permisos de administrador")
     return user
+
+
+# --------------- PDF storage helpers (GridFS, supports large files) ---------------
+async def store_pdf(pdf_base64: str, filename: str) -> tuple[str, int]:
+    try:
+        raw = base64.b64decode(pdf_base64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="PDF invalido")
+    if not raw:
+        raise HTTPException(status_code=400, detail="El archivo esta vacio")
+    grid_id = await fs.upload_from_stream(filename, raw)
+    return str(grid_id), len(raw)
+
+
+async def load_pdf_b64(doc: Dict[str, Any]) -> str:
+    if doc.get("pdf_base64"):
+        return doc["pdf_base64"]
+    gid = doc.get("grid_id")
+    if not gid:
+        return ""
+    grid_out = await fs.open_download_stream(ObjectId(gid))
+    data = await grid_out.read()
+    return base64.b64encode(data).decode("utf-8")
+
+
+async def delete_pdf(doc: Dict[str, Any]) -> None:
+    gid = doc.get("grid_id")
+    if gid:
+        try:
+            await fs.delete(ObjectId(gid))
+        except Exception:
+            pass
 
 
 # ----------------------------- Calculations -----------------------------
@@ -623,25 +657,24 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
 # ----------------------------- Library documents -----------------------------
 @api_router.post("/library/documents")
 async def add_document(data: DocumentInput, user: Dict[str, Any] = Depends(get_current_user)):
-    size = int(len(data.pdf_base64) * 3 / 4)  # approx bytes from base64
+    grid_id, size = await store_pdf(data.pdf_base64, data.filename)
     doc = {
         "doc_id": f"doc_{uuid.uuid4().hex[:12]}",
         "user_id": user["user_id"],
         "title": data.title,
         "filename": data.filename,
-        "pdf_base64": data.pdf_base64,
+        "grid_id": grid_id,
         "size": size,
         "created_at": now_iso(),
     }
     await db.documents.insert_one(dict(doc))
-    doc.pop("pdf_base64", None)
     return {"document": doc}
 
 
 @api_router.get("/library/documents")
 async def list_documents(user: Dict[str, Any] = Depends(get_current_user)):
     docs = await db.documents.find(
-        {"user_id": user["user_id"]}, {"_id": 0, "pdf_base64": 0}
+        {"user_id": user["user_id"]}, {"_id": 0, "pdf_base64": 0, "grid_id": 0}
     ).sort("created_at", -1).to_list(500)
     return {"documents": docs}
 
@@ -653,6 +686,8 @@ async def get_document(doc_id: str, user: Dict[str, Any] = Depends(get_current_u
     )
     if not d:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    d["pdf_base64"] = await load_pdf_b64(d)
+    d.pop("grid_id", None)
     return {"document": d}
 
 
@@ -661,6 +696,7 @@ async def delete_document(doc_id: str, user: Dict[str, Any] = Depends(get_curren
     d = await db.documents.find_one({"doc_id": doc_id, "user_id": user["user_id"]})
     if not d:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await delete_pdf(d)
     await db.documents.delete_one({"doc_id": doc_id})
     return {"ok": True}
 
@@ -673,19 +709,18 @@ CATALOG_CATEGORIES = {"ficha_tecnica", "hoja_seguridad"}
 async def add_catalog_document(data: CatalogInput, user: Dict[str, Any] = Depends(get_current_admin)):
     if data.category not in CATALOG_CATEGORIES:
         raise HTTPException(status_code=400, detail="Categoria invalida")
-    size = int(len(data.pdf_base64) * 3 / 4)
+    grid_id, size = await store_pdf(data.pdf_base64, data.filename)
     doc = {
         "doc_id": f"cat_{uuid.uuid4().hex[:12]}",
         "category": data.category,
         "title": data.title,
         "filename": data.filename,
-        "pdf_base64": data.pdf_base64,
+        "grid_id": grid_id,
         "size": size,
         "uploaded_by": user["email"],
         "created_at": now_iso(),
     }
     await db.catalog.insert_one(dict(doc))
-    doc.pop("pdf_base64", None)
     return {"document": doc}
 
 
@@ -696,7 +731,7 @@ async def list_catalog_documents(category: Optional[str] = None, user: Dict[str,
         if category not in CATALOG_CATEGORIES:
             raise HTTPException(status_code=400, detail="Categoria invalida")
         query["category"] = category
-    docs = await db.catalog.find(query, {"_id": 0, "pdf_base64": 0}).sort("created_at", -1).to_list(1000)
+    docs = await db.catalog.find(query, {"_id": 0, "pdf_base64": 0, "grid_id": 0}).sort("created_at", -1).to_list(1000)
     return {"documents": docs}
 
 
@@ -705,6 +740,8 @@ async def get_catalog_document(doc_id: str, user: Dict[str, Any] = Depends(get_c
     d = await db.catalog.find_one({"doc_id": doc_id}, {"_id": 0})
     if not d:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    d["pdf_base64"] = await load_pdf_b64(d)
+    d.pop("grid_id", None)
     return {"document": d}
 
 
@@ -713,6 +750,7 @@ async def delete_catalog_document(doc_id: str, user: Dict[str, Any] = Depends(ge
     d = await db.catalog.find_one({"doc_id": doc_id})
     if not d:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await delete_pdf(d)
     await db.catalog.delete_one({"doc_id": doc_id})
     return {"ok": True}
 

@@ -1,0 +1,42 @@
+{
+  "summary": "PDF publish bug fix (GridFS storage for catalog + personal library) verified end-to-end. Backend: 19/19 pytest cases pass in /app/backend/tests/test_pdf_publish.py — including a ~16MB base64 (12MB raw) PDF that previously failed on the 16MB BSON limit, now succeeds via GridFS for both POST /api/catalog/documents and POST /api/library/documents; GET returns pdf_base64 reconstituted from GridFS; DELETE removes the GridFS file. Admin/non-admin role gating (403), invalid category (400) and invalid base64 (400) all return correct status codes. Personal library isolation: admin cannot read another user's library doc (404). Frontend (Expo web preview, 390x844): logged in as admin test@preservia.com/secret123 → Biblioteca → Catálogo. 'Publicar PDF' (upload-catalog-button) visible for admin; publishing a PDF via the DocumentPicker file chooser succeeds in BOTH categories (cat-chip-ficha_tecnica and cat-chip-hoja_seguridad) — new doc-item-cat_* cards appear immediately. Tapping a catalog doc navigates to /viewer?scope=catalog&id=cat_... and renders inside viewer-body (pdf.js iframe, console shows 'Indexing all PDF objects'). 'Mis documentos' (lib-tab-documents) upload via upload-doc-button also succeeds; the personal doc opens in the viewer. Non-admin user (freshly registered via /register) does NOT see upload-catalog-button nor delete-doc-* icons on the Catálogo tab in either category, but CAN open catalog docs (viewer-body renders). No red-screen errors, no failed API calls in console. Existing React Native Web deprecation warnings (shadow*, props.pointerEvents) remain from prior iterations (non-blocking).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/catalog/documents & /api/library/documents", "issue": "Response echoes the full inserted doc dict including internal 'grid_id' (Mongo GridFS ObjectId string). Not a security issue but inconsistent with GET/list endpoints which strip it. Consider projecting it out before returning."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "React Native Web warning still logged on every screen: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Non-blocking; pre-existing from iteration_1/2."},
+      {"component": "props.pointerEvents", "issue": "React Native Web warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking; pre-existing."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_pdf_publish.py",
+    "/app/test_reports/pytest/pdf_publish.xml"
+  ],
+  "action_items": [
+    "Optional: project out 'grid_id' from POST /api/catalog/documents and POST /api/library/documents response bodies for consistency with the GET/list endpoints.",
+    "Optional cleanup: prior test iterations left ~5 TEST_ficha_ui.pdf + 1 TEST_hoja_ui.pdf catalog docs and ~2 TEST_personal_ui.pdf personal docs in DB (all under GridFS bucket 'pdfs'). Safe to prune by title prefix TEST_."
+  ],
+  "critical_code_review_comments": [
+    "server.py store_pdf/load_pdf_b64/delete_pdf are the correct GridFS wrappers; POST catalog/library uses store_pdf, GET uses load_pdf_b64 with backward-compat fallback to legacy inline pdf_base64 field (good for existing docs), DELETE calls delete_pdf then removes the metadata doc.",
+    "List endpoints correctly project out {_id:0, pdf_base64:0, grid_id:0} to keep listings small; single-doc GET pops grid_id after loading. GET/list handling looks correct.",
+    "library.tsx readPickedPdf converts the picked File to base64 on web via FileReader.readAsDataURL and strips the data URL prefix — correct for the backend's base64 payload contract.",
+    "Frontend uploads do not chunk; extremely large PDFs may still hit ingress or HTTP body size limits despite the GridFS fix. Consider streaming multipart upload if users start pushing >30–50MB PDFs.",
+    "isAdmin gate in library.tsx correctly conditionally renders upload-catalog-button and the trash icon; matches the backend admin-only role enforcement (get_current_admin)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_pdf_publish.py (new)"
+  ],
+  "success_rate": {"backend": "100% (19/19 pytest, including 12MB PDF via GridFS)", "frontend": "100% (admin publish in both categories, viewer render, personal upload, non-admin permission gating)"},
+  "seed_data_creation": "New GridFS-backed test docs created via UI (all prefixed TEST_): ~5 TEST_ficha_ui.pdf + 1 TEST_hoja_ui.pdf in db.catalog, and 2 TEST_personal_ui.pdf in db.documents for a throwaway buguser_*@test.com account. Pytest suite creates and cleans up its own set.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Publish flow bug is FIXED (GridFS). Key testIDs: lib-tab-catalog, lib-tab-documents, cat-chip-ficha_tecnica, cat-chip-hoja_seguridad, upload-catalog-button (admin only), upload-doc-button, doc-item-<doc_id>, delete-doc-<doc_id> (admin only for catalog scope), viewer-body, viewer-back. To automate DocumentPicker on web use Playwright's page.expect_file_chooser() then chooser.set_files({name, mimeType:'application/pdf', buffer}). Admin creds test@preservia.com/secret123; regular user user1@test.com/secret123 (or register a fresh one). Toast disappears within ~3s so assert list membership (doc-item-*) rather than the toast text.",
+  "rca_of_issue": "Original bug ('no permite publicar pdf'): backend inserted the whole PDF as base64 into db.catalog / db.documents documents. When a scanned Hoja de Seguridad's base64 exceeded MongoDB's 16MB BSON per-document limit, insert_one raised DocumentTooLarge → FastAPI 500 → frontend toast 'No se pudo publicar el documento'. Fix (already applied): server.py now streams the decoded bytes into GridFS bucket 'pdfs' (store_pdf), keeps only {grid_id, size, ...metadata} in db.catalog/db.documents, and rehydrates pdf_base64 on GET (load_pdf_b64, with fallback to legacy inline field for old docs). DELETE removes the GridFS file too (delete_pdf). Verified: 12MB raw / ~16MB base64 payload publishes with HTTP 200 and reopens correctly through the in-app viewer."
+}
