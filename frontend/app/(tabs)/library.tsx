@@ -13,7 +13,6 @@ import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
 
 import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
@@ -50,21 +49,6 @@ async function readPickedPdf(uri: string): Promise<string> {
   return FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
 }
 
-async function openPdfBase64(base64: string, filename: string) {
-  if (Platform.OS === "web") {
-    const link = document.createElement("a");
-    link.href = `data:application/pdf;base64,${base64}`;
-    link.download = filename;
-    link.click();
-    return;
-  }
-  const uri = FileSystem.cacheDirectory + filename;
-  await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf", UTI: "com.adobe.pdf" });
-  }
-}
-
 export default function Library() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -77,7 +61,6 @@ export default function Library() {
   const [cat, setCat] = useState<Cat>("ficha_tecnica");
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     try {
@@ -143,18 +126,10 @@ export default function Library() {
     }
   };
 
-  const openDoc = async (docId: string, endpoint: string) => {
-    setOpeningId(docId);
-    try {
-      const resp = await api.get<{ document: { pdf_base64: string; filename: string } }>(
-        `${endpoint}/${docId}`,
-      );
-      await openPdfBase64(resp.document.pdf_base64, resp.document.filename);
-    } catch (e: any) {
-      toast.show(e?.detail || "No se pudo abrir el documento", "error");
-    } finally {
-      setOpeningId(null);
-    }
+  const openDoc = (doc: Doc, scope: "catalog" | "library") => {
+    router.push(
+      `/viewer?scope=${scope}&id=${doc.doc_id}&title=${encodeURIComponent(doc.title)}`,
+    );
   };
 
   const deleteDoc = async (docId: string) => {
@@ -168,19 +143,15 @@ export default function Library() {
 
   const catalogFiltered = catalog.filter((d) => d.category === cat);
 
-  const renderDocCard = (d: Doc, endpoint: string, onDelete?: (id: string) => void) => (
+  const renderDocCard = (d: Doc, scope: "catalog" | "library", onDelete?: (id: string) => void) => (
     <Pressable
       key={d.doc_id}
       testID={`doc-item-${d.doc_id}`}
       style={({ pressed }) => [styles.docCard, pressed && { opacity: 0.85 }]}
-      onPress={() => openDoc(d.doc_id, endpoint)}
+      onPress={() => openDoc(d, scope)}
     >
       <View style={styles.docIcon}>
-        {openingId === d.doc_id ? (
-          <ActivityIndicator color={colors.error} />
-        ) : (
-          <Ionicons name="document-text" size={22} color={colors.error} />
-        )}
+        <Ionicons name="document-text" size={22} color={colors.error} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.refTitle} numberOfLines={1}>
@@ -188,6 +159,7 @@ export default function Library() {
         </Text>
         <Text style={styles.refSummary}>{fmtSize(d.size)}</Text>
       </View>
+      <Ionicons name="eye-outline" size={20} color={colors.onSurfaceTertiary} style={{ marginRight: onDelete ? spacing.sm : 0 }} />
       {onDelete && (
         <Pressable testID={`delete-doc-${d.doc_id}`} onPress={() => onDelete(d.doc_id)} hitSlop={10}>
           <Ionicons name="trash-outline" size={18} color={colors.onSurfaceTertiary} />
@@ -281,7 +253,7 @@ export default function Library() {
           ) : (
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
               {catalogFiltered.map((d) =>
-                renderDocCard(d, "/catalog/documents", isAdmin ? deleteCatalog : undefined),
+                renderDocCard(d, "catalog", isAdmin ? deleteCatalog : undefined),
               )}
             </ScrollView>
           )}
@@ -319,7 +291,7 @@ export default function Library() {
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-              {docs.map((d) => renderDocCard(d, "/library/documents", deleteDoc))}
+              {docs.map((d) => renderDocCard(d, "library", deleteDoc))}
             </ScrollView>
           )}
 

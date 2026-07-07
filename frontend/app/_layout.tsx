@@ -54,6 +54,7 @@ export default function RootLayout() {
                   <Stack.Screen name="library/[id]" />
                   <Stack.Screen name="calculator/[type]" options={{ presentation: "modal" }} />
                   <Stack.Screen name="calculator/wizard" options={{ presentation: "modal" }} />
+                  <Stack.Screen name="viewer" />
                 </Stack>
               </View>
             </ToastProvider>
