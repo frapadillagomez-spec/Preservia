@@ -547,6 +547,21 @@ async def delete_note(note_id: str, user: Dict[str, Any] = Depends(get_current_u
 
 
 # ----------------------------- PDF Report -----------------------------
+INPUT_LABELS = {
+    "desired_index_pct": "Concentracion de formaldehido inyectado (C2 %)",
+    "fluid_index_pct": "Index de Fluido Concentrado (C1 %)",
+    "concentrate_ml": "Volumen Botella Concentrado (V1 mL)",
+    "weight_kg": "Peso (kg)",
+    "height_cm": "Estatura (cm)",
+    "sex": "Sexo",
+    "case_type": "Tipo de caso",
+    "total_solution_l": "Solucion total (L)",
+}
+
+SEX_LABELS = {"male": "Masculino", "female": "Femenino"}
+CASE_TYPE_LABELS = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
+
+
 def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any]) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -563,6 +578,16 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     h2 = ParagraphStyle("PH2", parent=styles["Heading2"], textColor=slate, fontSize=13, spaceBefore=14, spaceAfter=6)
     body = ParagraphStyle("PBody", parent=styles["Normal"], textColor=ink, fontSize=10, leading=15)
     small = ParagraphStyle("PSmall", parent=styles["Normal"], textColor=slate_light, fontSize=8.5)
+    cell_label = ParagraphStyle("PCellLabel", parent=styles["Normal"], textColor=slate_light, fontSize=9.5, leading=13)
+    cell_val = ParagraphStyle("PCellVal", parent=styles["Normal"], textColor=ink, fontSize=9.5, leading=13)
+    cell = ParagraphStyle("PCell", parent=styles["Normal"], textColor=ink, fontSize=8.5, leading=11)
+    cell_head = ParagraphStyle(
+        "PCellHead", parent=styles["Normal"], textColor=colors.white, fontSize=8.5, leading=11, fontName="Helvetica-Bold"
+    )
+
+    def esc(v: Any) -> str:
+        s = str(v) if v is not None else ""
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     def fmt_date(iso: Optional[str]) -> str:
         if not iso:
@@ -573,22 +598,25 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
             return iso
 
     elems: List[Any] = []
-    elems.append(Paragraph("PRESERVIA", title))
+    logo_path = ROOT_DIR / "assets" / "preservia-logo.png"
+    if logo_path.exists():
+        elems.append(RLImage(str(logo_path), width=55 * mm, height=(55.0 / 6.0) * mm))
+        elems.append(Spacer(1, 4))
+    else:
+        elems.append(Paragraph("PRESERVIA", title))
     elems.append(Paragraph("Reporte profesional de caso - Tanatopraxia", subtitle))
 
     info_rows = [
-        ["Caso", case.get("name", "-")],
-        ["ID / Referencia", case.get("case_ref") or "-"],
-        ["Fallecido", case.get("deceased_name") or "-"],
-        ["Fecha del caso", fmt_date(case.get("date"))],
-        ["Profesional", f"{user.get('name','')} ({user.get('email','')})"],
-        ["Generado", fmt_date(now_iso())],
+        [Paragraph("Caso", cell_label), Paragraph(esc(case.get("name", "-")), cell_val)],
+        [Paragraph("ID / Referencia", cell_label), Paragraph(esc(case.get("case_ref") or "-"), cell_val)],
+        [Paragraph("Fallecido", cell_label), Paragraph(esc(case.get("deceased_name") or "-"), cell_val)],
+        [Paragraph("Fecha del caso", cell_label), Paragraph(esc(fmt_date(case.get("date"))), cell_val)],
+        [Paragraph("Profesional", cell_label), Paragraph(esc(f"{user.get('name','')} ({user.get('email','')})"), cell_val)],
+        [Paragraph("Generado", cell_label), Paragraph(esc(fmt_date(now_iso())), cell_val)],
     ]
     t = Table(info_rows, colWidths=[45 * mm, 120 * mm])
     t.setStyle(TableStyle([
-        ("FONTSIZE", (0, 0), (-1, -1), 10),
-        ("TEXTCOLOR", (0, 0), (0, -1), slate_light),
-        ("TEXTCOLOR", (1, 0), (1, -1), ink),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
@@ -598,19 +626,37 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     elems.append(Paragraph("Calculos tecnicos", h2))
     calcs = case.get("calculations", [])
     if calcs:
-        data_rows = [["Tipo", "Datos", "Resultado"]]
+        data_rows = [[Paragraph("Tipo", cell_head), Paragraph("Datos", cell_head), Paragraph("Resultado", cell_head)]]
+        def fmt_inputs(inputs: Dict[str, Any]) -> str:
+            order = [
+                "desired_index_pct", "fluid_index_pct", "concentrate_ml",
+                "weight_kg", "height_cm", "sex", "case_type", "total_solution_l",
+            ]
+            keys = [k for k in order if k in inputs] + [k for k in inputs if k not in order]
+            lines = []
+            for k in keys:
+                v = inputs[k]
+                if k == "sex":
+                    v = SEX_LABELS.get(str(v).lower(), v)
+                elif k == "case_type":
+                    v = CASE_TYPE_LABELS.get(str(v).lower(), v)
+                lines.append(f"{esc(INPUT_LABELS.get(k, k))}: {esc(v)}")
+            return "<br/>".join(lines)
+
         for c in calcs:
-            inputs_str = ", ".join(f"{k}: {v}" for k, v in c.get("inputs", {}).items())
-            data_rows.append([c.get("label", c.get("type")), inputs_str, c.get("summary", "")])
+            data_rows.append([
+                Paragraph(esc(c.get("label", c.get("type"))), cell),
+                Paragraph(fmt_inputs(c.get("inputs", {})), cell),
+                Paragraph(esc(c.get("summary", "")), cell),
+            ])
         ct = Table(data_rows, colWidths=[40 * mm, 60 * mm, 65 * mm])
         ct.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), slate),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
         ]))
