@@ -9,7 +9,7 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar } from "@/src/components/BrandLogo";
 
 const SUPPORT_EMAIL = "francisco.padilla@preservia.mx";
-const WEBSITE_URL = "https://www.preservia.mx";
+const WEBSITE_URL = "https://preservia.mx";
 const WHATSAPP_NUMBER = "5548708776";
 const WHATSAPP_URL = "https://wa.me/52" + WHATSAPP_NUMBER;
 
@@ -146,7 +146,7 @@ export default function Help() {
 
         <Pressable
           testID="website-button"
-          onPress={() => openLink(WEBSITE_URL, "www.preservia.mx")}
+          onPress={() => openLink(WEBSITE_URL, "preservia.mx")}
           style={[styles.supportCard, { marginTop: spacing.sm }]}
         >
           <View style={[styles.supportIcon, { backgroundColor: colors.brandTertiary }]}>
@@ -154,7 +154,7 @@ export default function Help() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.supportTitle}>Sitio web</Text>
-            <Text style={styles.supportSub}>www.preservia.mx</Text>
+            <Text style={styles.supportSub}>preservia.mx</Text>
           </View>
           <Ionicons name="open-outline" size={20} color={colors.onSurfaceTertiary} />
         </Pressable>
