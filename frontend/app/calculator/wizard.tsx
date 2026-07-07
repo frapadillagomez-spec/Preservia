@@ -322,7 +322,8 @@ export default function Wizard() {
                     </View>
                   </View>
                   <Text style={styles.resultHint}>
-                    Recomendado por masa magra: ~{result.results.recommended_l} L totales.
+                    {result.results.case_type} ({result.results.adjustment}) · Recomendado por masa magra:
+                    {" "}~{result.results.recommended_l} L (~{result.results.recommended_bottles} botellas de 473 mL).
                   </Text>
                 </View>
               )}
