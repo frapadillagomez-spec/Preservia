@@ -35,6 +35,9 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
 JWT_EXPIRE_DAYS = 30
 EMERGENT_SESSION_API = os.environ["EMERGENT_SESSION_API"]
+ADMIN_EMAILS = {
+    e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("preservia")
@@ -84,6 +87,13 @@ class DocumentInput(BaseModel):
     pdf_base64: str
 
 
+class CatalogInput(BaseModel):
+    category: str  # ficha_tecnica | hoja_seguridad
+    title: str
+    filename: str
+    pdf_base64: str
+
+
 # ----------------------------- Helpers -----------------------------
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -116,6 +126,7 @@ def public_user(u: Dict[str, Any]) -> Dict[str, Any]:
         "name": u.get("name", ""),
         "picture": u.get("picture", ""),
         "provider": u.get("provider", "email"),
+        "is_admin": u.get("email", "").lower() in ADMIN_EMAILS,
     }
 
 
@@ -132,6 +143,12 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     user = await db.users.find_one({"user_id": payload.get("sub")}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
+    return user
+
+
+async def get_current_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if user.get("email", "").lower() not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Requiere permisos de administrador")
     return user
 
 
@@ -648,6 +665,58 @@ async def delete_document(doc_id: str, user: Dict[str, Any] = Depends(get_curren
     return {"ok": True}
 
 
+# ----------------------------- Shared catalog (admin-managed) -----------------------------
+CATALOG_CATEGORIES = {"ficha_tecnica", "hoja_seguridad"}
+
+
+@api_router.post("/catalog/documents")
+async def add_catalog_document(data: CatalogInput, user: Dict[str, Any] = Depends(get_current_admin)):
+    if data.category not in CATALOG_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Categoria invalida")
+    size = int(len(data.pdf_base64) * 3 / 4)
+    doc = {
+        "doc_id": f"cat_{uuid.uuid4().hex[:12]}",
+        "category": data.category,
+        "title": data.title,
+        "filename": data.filename,
+        "pdf_base64": data.pdf_base64,
+        "size": size,
+        "uploaded_by": user["email"],
+        "created_at": now_iso(),
+    }
+    await db.catalog.insert_one(dict(doc))
+    doc.pop("pdf_base64", None)
+    return {"document": doc}
+
+
+@api_router.get("/catalog/documents")
+async def list_catalog_documents(category: Optional[str] = None, user: Dict[str, Any] = Depends(get_current_user)):
+    query: Dict[str, Any] = {}
+    if category:
+        if category not in CATALOG_CATEGORIES:
+            raise HTTPException(status_code=400, detail="Categoria invalida")
+        query["category"] = category
+    docs = await db.catalog.find(query, {"_id": 0, "pdf_base64": 0}).sort("created_at", -1).to_list(1000)
+    return {"documents": docs}
+
+
+@api_router.get("/catalog/documents/{doc_id}")
+async def get_catalog_document(doc_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    d = await db.catalog.find_one({"doc_id": doc_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {"document": d}
+
+
+@api_router.delete("/catalog/documents/{doc_id}")
+async def delete_catalog_document(doc_id: str, user: Dict[str, Any] = Depends(get_current_admin)):
+    d = await db.catalog.find_one({"doc_id": doc_id})
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await db.catalog.delete_one({"doc_id": doc_id})
+    return {"ok": True}
+
+
 @api_router.get("/")
 async def root():
     return {"message": "Preservia API"}
@@ -672,6 +741,7 @@ async def startup():
     await db.cases.create_index("case_id", unique=True)
     await db.notes.create_index("case_id")
     await db.documents.create_index("user_id")
+    await db.catalog.create_index("category")
     logger.info("Preservia API ready")
 
 

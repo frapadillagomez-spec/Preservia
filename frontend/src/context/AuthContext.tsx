@@ -15,6 +15,7 @@ export type User = {
   name: string;
   picture?: string;
   provider: string;
+  is_admin?: boolean;
 };
 
 type AuthState = {
