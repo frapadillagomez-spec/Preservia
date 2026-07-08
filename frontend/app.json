@@ -10,11 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.preserviacases.ime75s",
-      "infoPlist": {
-        "NSCameraUsageDescription": "Toma fotos para documentar tus casos",
-        "NSPhotoLibraryUsageDescription": "Adjunta fotos a las notas de tus casos"
-      }
+      "bundleIdentifier": "com.emergent.preserviacases.ime75s"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,8 +18,7 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.preserviacases.ime75s",
-      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
+      "package": "com.emergent.preserviacases.ime75s"
     },
     "web": {
       "bundler": "metro",

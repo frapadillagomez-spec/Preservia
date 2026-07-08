@@ -10,11 +10,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
@@ -70,7 +68,6 @@ export default function CaseDetail() {
 
   // note composer
   const [noteText, setNoteText] = useState("");
-  const [notePhotos, setNotePhotos] = useState<string[]>([]);
   const [savingNote, setSavingNote] = useState(false);
   const [reporting, setReporting] = useState(false);
 
@@ -92,46 +89,16 @@ export default function CaseDetail() {
     }, [load]),
   );
 
-  // ---------- photos ----------
-  const pickPhoto = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      toast.show("Permiso de galería denegado", "error");
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.5,
-      base64: true,
-      allowsEditing: true,
-    });
-    if (!res.canceled && res.assets[0]?.base64) {
-      setNotePhotos((p) => [...p, `data:image/jpeg;base64,${res.assets[0].base64}`]);
-    }
-  };
-
-  const takePhoto = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      toast.show("Permiso de cámara denegado", "error");
-      return;
-    }
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.5, base64: true });
-    if (!res.canceled && res.assets[0]?.base64) {
-      setNotePhotos((p) => [...p, `data:image/jpeg;base64,${res.assets[0].base64}`]);
-    }
-  };
-
+  // ---------- notes ----------
   const saveNote = async () => {
-    if (!noteText.trim() && notePhotos.length === 0) {
-      toast.show("Agrega texto o una foto", "error");
+    if (!noteText.trim()) {
+      toast.show("Agrega texto a la nota", "error");
       return;
     }
     setSavingNote(true);
     try {
-      await api.post(`/cases/${id}/notes`, { text: noteText.trim(), photos: notePhotos });
+      await api.post(`/cases/${id}/notes`, { text: noteText.trim(), photos: [] });
       setNoteText("");
-      setNotePhotos([]);
       toast.show("Nota guardada", "success");
       load();
     } catch (e: any) {
@@ -309,29 +276,7 @@ export default function CaseDetail() {
                 multiline
                 style={styles.noteInput}
               />
-              {notePhotos.length > 0 && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.md }}>
-                  {notePhotos.map((p, i) => (
-                    <View key={i} style={styles.thumbWrap}>
-                      <Image source={p} style={styles.thumb} contentFit="cover" />
-                      <Pressable
-                        testID={`remove-photo-${i}`}
-                        onPress={() => setNotePhotos((arr) => arr.filter((_, idx) => idx !== i))}
-                        style={styles.thumbRemove}
-                      >
-                        <Ionicons name="close" size={14} color="#fff" />
-                      </Pressable>
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
               <View style={styles.composerActions}>
-                <Pressable testID="note-add-photo" onPress={pickPhoto} style={styles.iconBtn}>
-                  <Ionicons name="image-outline" size={20} color={colors.onSurfaceSecondary} />
-                </Pressable>
-                <Pressable testID="note-take-photo" onPress={takePhoto} style={styles.iconBtn}>
-                  <Ionicons name="camera-outline" size={20} color={colors.onSurfaceSecondary} />
-                </Pressable>
                 <View style={{ flex: 1 }} />
                 <Button
                   testID="save-note-button"
@@ -356,13 +301,6 @@ export default function CaseDetail() {
                     </Pressable>
                   </View>
                   {!!n.text && <Text style={styles.noteText}>{n.text}</Text>}
-                  {n.photos.length > 0 && (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.sm }}>
-                      {n.photos.map((p, i) => (
-                        <Image key={i} source={p} style={styles.noteThumb} contentFit="cover" />
-                      ))}
-                    </ScrollView>
-                  )}
                 </View>
               ))
             )}
@@ -377,7 +315,7 @@ export default function CaseDetail() {
             <Text style={styles.reportTitle}>Reporte del caso</Text>
             <Text style={styles.reportSub}>
               Genera un PDF profesional con los datos del caso, {data.calculations.length} cálculo(s) y{" "}
-              {data.notes.length} nota(s) con sus fotos.
+              {data.notes.length} nota(s).
             </Text>
             <Button
               testID="generate-report-button"
@@ -396,12 +334,6 @@ export default function CaseDetail() {
             <View style={styles.summaryItem}>
               <Text style={styles.summaryNum}>{data.notes.length}</Text>
               <Text style={styles.summaryLabel}>Notas</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryNum}>
-                {data.notes.reduce((acc, n) => acc + n.photos.length, 0)}
-              </Text>
-              <Text style={styles.summaryLabel}>Fotos</Text>
             </View>
           </View>
         </ScrollView>
@@ -518,27 +450,6 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   composerActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.md },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  thumbWrap: { marginRight: spacing.sm, position: "relative" },
-  thumb: { width: 72, height: 72, borderRadius: radius.md },
-  thumbRemove: {
-    position: "absolute",
-    top: -6,
-    right: -6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.errorBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   noteCard: {
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
@@ -550,7 +461,6 @@ const styles = StyleSheet.create({
   noteHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
   noteDate: { color: colors.onSurfaceTertiary, fontFamily: font.mono, fontSize: fontSize.sm },
   noteText: { color: colors.onSurface, fontFamily: font.regular, fontSize: fontSize.base, lineHeight: 21 },
-  noteThumb: { width: 96, height: 96, borderRadius: radius.md, marginRight: spacing.sm },
   reportCard: {
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
