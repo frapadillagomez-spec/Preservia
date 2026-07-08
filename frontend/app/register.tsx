@@ -34,7 +34,7 @@ export default function Register() {
     setBusy(true);
     try {
       await register(name.trim(), email.trim(), password);
-      router.replace("/(tabs)");
+      router.replace("/welcome");
     } catch (e: any) {
       toast.show(e?.detail || "No se pudo crear la cuenta", "error");
     } finally {

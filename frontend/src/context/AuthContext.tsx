@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const resp = await api.post("/auth/google", { session_id: sessionId }, false);
         await persist(resp);
-        router.replace("/(tabs)");
+        router.replace("/welcome");
       } finally {
         setGoogleBusy(false);
       }

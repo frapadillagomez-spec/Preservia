@@ -48,6 +48,7 @@ export default function RootLayout() {
                   <Stack.Screen name="index" />
                   <Stack.Screen name="login" />
                   <Stack.Screen name="register" />
+                  <Stack.Screen name="welcome" />
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="case/new" options={{ presentation: "modal" }} />
                   <Stack.Screen name="case/[id]" />

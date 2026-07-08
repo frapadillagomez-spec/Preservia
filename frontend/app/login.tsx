@@ -35,7 +35,7 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email.trim(), password);
-      router.replace("/(tabs)");
+      router.replace("/welcome");
     } catch (e: any) {
       toast.show(e?.detail || "Error al iniciar sesión", "error");
     } finally {
