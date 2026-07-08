@@ -546,6 +546,105 @@ async def delete_note(note_id: str, user: Dict[str, Any] = Depends(get_current_u
     return {"ok": True}
 
 
+# ----------------------------- Stats / History -----------------------------
+CALC_TYPE_LABELS = {
+    "volume": "Volumen de solución",
+    "lbm": "Masa magra corporal",
+    "concentration": "Concentración / Dilución",
+}
+
+
+def _parse_dt(iso: Optional[str]) -> Optional[datetime]:
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+@api_router.get("/stats")
+async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
+    cases = await db.cases.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(1000)
+    total_notes = await db.notes.count_documents({"user_id": user["user_id"]})
+
+    now = datetime.now(timezone.utc)
+    total_cases = len(cases)
+    active_cases = 0
+    archived_cases = 0
+    total_calcs = 0
+    calc_by_type: Dict[str, int] = {"volume": 0, "lbm": 0, "concentration": 0}
+    cases_last_30 = 0
+
+    # Last 6 months buckets (oldest -> newest)
+    month_labels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+    months: List[Dict[str, Any]] = []
+    for i in range(5, -1, -1):
+        y = now.year
+        m = now.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        months.append({"key": f"{y}-{m:02d}", "label": month_labels[m - 1], "count": 0})
+    month_index = {mm["key"]: mm for mm in months}
+
+    for c in cases:
+        status = c.get("status", "active")
+        if status == "archived":
+            archived_cases += 1
+        else:
+            active_cases += 1
+        calcs = c.get("calculations", [])
+        total_calcs += len(calcs)
+        for calc in calcs:
+            t = calc.get("type")
+            if t in calc_by_type:
+                calc_by_type[t] += 1
+        created = _parse_dt(c.get("created_at")) or _parse_dt(c.get("date"))
+        if created:
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if (now - created).days < 30:
+                cases_last_30 += 1
+            key = f"{created.year}-{created.month:02d}"
+            if key in month_index:
+                month_index[key]["count"] += 1
+
+    # Recent cases (by updated_at desc)
+    recent = sorted(cases, key=lambda x: x.get("updated_at") or "", reverse=True)[:5]
+    recent_out = [
+        {
+            "case_id": c["case_id"],
+            "name": c.get("name", ""),
+            "case_ref": c.get("case_ref", ""),
+            "status": c.get("status", "active"),
+            "calc_count": len(c.get("calculations", [])),
+            "updated_at": c.get("updated_at"),
+            "date": c.get("date"),
+        }
+        for c in recent
+    ]
+
+    calc_breakdown = [
+        {"type": t, "label": CALC_TYPE_LABELS[t], "count": calc_by_type[t]}
+        for t in ["volume", "lbm", "concentration"]
+    ]
+
+    return {
+        "totals": {
+            "cases": total_cases,
+            "calculations": total_calcs,
+            "notes": total_notes,
+            "active_cases": active_cases,
+            "archived_cases": archived_cases,
+            "cases_last_30_days": cases_last_30,
+        },
+        "monthly": months,
+        "calc_breakdown": calc_breakdown,
+        "recent_cases": recent_out,
+    }
+
+
 # ----------------------------- PDF Report -----------------------------
 INPUT_LABELS = {
     "desired_index_pct": "Concentracion de formaldehido inyectado (C2 %)",
