@@ -30,6 +30,7 @@ type CaseData = {
   case_ref: string;
   deceased_name: string;
   date: string;
+  status: string;
   calculations: Calc[];
   notes: Note[];
 };
@@ -126,6 +127,19 @@ export default function CaseDetail() {
     router.replace("/(tabs)");
   };
 
+  const toggleArchive = async () => {
+    if (!data) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const next = data.status === "archived" ? "active" : "archived";
+    try {
+      await api.patch(`/cases/${id}/status`, { status: next });
+      toast.show(next === "archived" ? "Caso archivado" : "Caso reactivado", "success");
+      load();
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo actualizar el caso", "error");
+    }
+  };
+
   const generateReport = async () => {
     setReporting(true);
     try {
@@ -182,8 +196,22 @@ export default function CaseDetail() {
           <Text style={styles.headerTitle} numberOfLines={1}>
             {data.name}
           </Text>
-          {!!data.case_ref && <Text style={styles.headerSub}>Ref. {data.case_ref}</Text>}
+          {data.status === "archived" ? (
+            <View style={styles.archivedBadge}>
+              <Ionicons name="archive" size={11} color={colors.onSurfaceTertiary} />
+              <Text style={styles.archivedText}>Archivado</Text>
+            </View>
+          ) : (
+            !!data.case_ref && <Text style={styles.headerSub}>Ref. {data.case_ref}</Text>
+          )}
         </View>
+        <Pressable testID="case-archive" onPress={toggleArchive} hitSlop={12} style={{ marginRight: spacing.md }}>
+          <Ionicons
+            name={data.status === "archived" ? "arrow-undo-outline" : "archive-outline"}
+            size={22}
+            color={colors.onSurfaceSecondary}
+          />
+        </Pressable>
         <Pressable testID="case-delete" onPress={deleteCase} hitSlop={12}>
           <Ionicons name="trash-outline" size={22} color={colors.error} />
         </Pressable>
@@ -366,6 +394,18 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1 },
   headerTitle: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xl },
   headerSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm },
+  archivedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    marginTop: 2,
+  },
+  archivedText: { color: colors.onSurfaceTertiary, fontFamily: font.medium, fontSize: fontSize.sm },
   segment: {
     flexDirection: "row",
     backgroundColor: colors.surfaceSecondary,

@@ -52,6 +52,7 @@ export default function CasesList() {
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"active" | "archived">("active");
 
   const load = useCallback(async () => {
     try {
@@ -72,12 +73,17 @@ export default function CasesList() {
     }, [load]),
   );
 
-  const filtered = cases.filter(
-    (c) =>
+  const filtered = cases.filter((c) => {
+    const status = c.status || "active";
+    if (status !== filter) return false;
+    return (
       c.name.toLowerCase().includes(query.toLowerCase()) ||
       (c.case_ref || "").toLowerCase().includes(query.toLowerCase()) ||
-      (c.deceased_name || "").toLowerCase().includes(query.toLowerCase()),
-  );
+      (c.deceased_name || "").toLowerCase().includes(query.toLowerCase())
+    );
+  });
+  const archivedCount = cases.filter((c) => (c.status || "active") === "archived").length;
+  const activeCount = cases.length - archivedCount;
 
   const goNew = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -132,6 +138,24 @@ export default function CasesList() {
             style={styles.searchInput}
           />
         </View>
+        <View style={styles.filterRow}>
+          {([
+            { key: "active", label: `Activos (${activeCount})` },
+            { key: "archived", label: `Archivados (${archivedCount})` },
+          ] as const).map((f) => (
+            <Pressable
+              key={f.key}
+              testID={`filter-${f.key}`}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                setFilter(f.key);
+              }}
+              style={[styles.filterBtn, filter === f.key && styles.filterActive]}
+            >
+              <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       {loading ? (
@@ -150,10 +174,18 @@ export default function CasesList() {
         <View style={styles.center}>
           <Image source={EMPTY_IMG} style={styles.emptyImg} contentFit="contain" />
           <Text style={styles.emptyTitle}>
-            {query ? "Sin resultados" : "Aún no hay casos"}
+            {query
+              ? "Sin resultados"
+              : filter === "archived"
+                ? "No hay casos archivados"
+                : "Aún no hay casos"}
           </Text>
           <Text style={styles.emptySub}>
-            {query ? "Prueba con otra búsqueda" : "Crea tu primer caso para empezar a documentar."}
+            {query
+              ? "Prueba con otra búsqueda"
+              : filter === "archived"
+                ? "Los casos que archives aparecerán aquí."
+                : "Crea tu primer caso para empezar a documentar."}
           </Text>
         </View>
       ) : (
@@ -206,6 +238,18 @@ const styles = StyleSheet.create({
     height: 46,
   },
   searchInput: { flex: 1, color: colors.onSurface, fontFamily: font.regular, fontSize: fontSize.base },
+  filterRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  filterBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  filterActive: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
+  filterText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  filterTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, gap: spacing.md },
   emptyImg: { width: 130, height: 130, opacity: 0.9, marginBottom: spacing.sm },
   emptyTitle: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg },

@@ -72,6 +72,10 @@ class CaseInput(BaseModel):
     status: Optional[str] = "active"
 
 
+class StatusInput(BaseModel):
+    status: str  # active | archived
+
+
 class CalcRequest(BaseModel):
     type: str  # volume | lbm | concentration
     inputs: Dict[str, Any]
@@ -467,6 +471,21 @@ async def update_case(case_id: str, data: CaseInput, user: Dict[str, Any] = Depe
             "status": data.status or c.get("status", "active"),
             "updated_at": now_iso(),
         }},
+    )
+    updated = await db.cases.find_one({"case_id": case_id}, {"_id": 0})
+    return {"case": updated}
+
+
+@api_router.patch("/cases/{case_id}/status")
+async def set_case_status(case_id: str, data: StatusInput, user: Dict[str, Any] = Depends(get_current_user)):
+    if data.status not in ("active", "archived"):
+        raise HTTPException(status_code=400, detail="Estado inválido")
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    await db.cases.update_one(
+        {"case_id": case_id},
+        {"$set": {"status": data.status, "updated_at": now_iso()}},
     )
     updated = await db.cases.find_one({"case_id": case_id}, {"_id": 0})
     return {"case": updated}
