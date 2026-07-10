@@ -1,6 +1,6 @@
 import { storage } from "@/src/utils/storage";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || "https://preservia.onrender.com";
 export const TOKEN_KEY = "preservia_token";
 
 export type ApiError = { status: number; detail: string };
