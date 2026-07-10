@@ -35,6 +35,7 @@ function runArgs(cmd, args) {
 const INSTALL_FORM = "yarn expo install";
 
 function runPreinstall() {
+  if (process.env.EAS_BUILD || process.env.CI) process.exit(0);
   const { list, source } = loadRules();
   maybeLogSource(list, source);
 
