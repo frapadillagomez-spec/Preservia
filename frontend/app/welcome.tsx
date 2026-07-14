@@ -15,12 +15,13 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 
-import { useAuth } from "@/src/context/AuthContext";
+import { storage } from "@/src/utils/storage";
 import { BrandLogo } from "@/src/components/BrandLogo";
 import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 const { width } = Dimensions.get("window");
+const WELCOME_KEY = "preservia_seen_welcome";
 
 type Slide = {
   key: string;
@@ -52,15 +53,16 @@ const SLIDES: Slide[] = [
 
 export default function Welcome() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [index, setIndex] = useState(0);
   const [box, setBox] = useState({ width, height: 0 });
 
   const total = SLIDES.length + 1; // +1 for the intro/brand slide
-  const displayName = (user?.name || "").trim();
 
-  const finish = () => router.replace("/(tabs)");
+  const finish = async () => {
+    await storage.setItem(WELCOME_KEY, true);
+    router.replace("/(tabs)");
+  };
 
   const goTo = (i: number) => {
     Haptics.selectionAsync().catch(() => {});
@@ -110,9 +112,7 @@ export default function Welcome() {
             <View style={[styles.slide, slideStyle]}>
               <View style={styles.brandBlock}>
                 <BrandLogo height={48} />
-                <Text style={styles.welcomeHi}>
-                  {displayName ? `Bienvenido, ${displayName}` : "Bienvenido"}
-                </Text>
+                <Text style={styles.welcomeHi}>Bienvenido</Text>
                 <Text style={styles.tagline}>Gestión profesional de casos de tanatopraxia</Text>
               </View>
             </View>

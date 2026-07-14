@@ -43,11 +43,9 @@ export default function RootLayout() {
           <AuthProvider>
             <ToastProvider>
               <View style={{ flex: 1, backgroundColor: colors.surface }}>
-                <StatusBar style="light" />
+                <StatusBar style="dark" />
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
                   <Stack.Screen name="index" />
-                  <Stack.Screen name="login" />
-                  <Stack.Screen name="register" />
                   <Stack.Screen name="welcome" />
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="case/new" options={{ presentation: "modal" }} />

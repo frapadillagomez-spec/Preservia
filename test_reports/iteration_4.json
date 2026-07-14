@@ -1,0 +1,39 @@
+{
+  "summary": "Preservia no-auth conversion + light theme fully verified. Backend: 15/15 pytest cases pass in /app/backend/tests/test_no_auth_flow.py — every /api endpoint (GET/POST/PUT/PATCH/DELETE /api/cases, /api/cases/{id}/calculations, /api/cases/{id}/notes, /api/cases/{id}/status, /api/cases/{id}/report, /api/notes/{id}, /api/stats, /api/auth/me) works WITHOUT any Authorization header and persists under user_id 'local_user'. /api/stats returns correct totals, 6-month bucket monthly, calc_breakdown (volume/lbm/concentration) and recent_cases arrays. Frontend (Expo web, 390x844 mobile viewport): Welcome carousel shows on fresh install (localStorage cleared) with 4 slides (Bienvenido brand + 3 feature cards), Saltar/Siguiente buttons, final CTA reads 'Comenzar'. After finishing, lands on Casos tab and DOES NOT show Welcome on subsequent visits (verified via full page reload). Light theme is correctly applied: white surface + dark slate ink text on every visited screen (Casos, Historial, Biblioteca, Ayuda, Perfil, Case detail, Welcome); logo visible; no invisible text or leftover dark backgrounds. Case flow: created a case via FAB modal, opened it (case-archive/back/delete header controls present). Archive toggle shows 'Caso archivado' toast + 'Archivado' badge; unarchive reverts. Notes tab has NO photo/camera buttons (verified via DOM scan for testIDs matching photo|camera|image|pick). Added a note (text-only) — appears in history list. Report tab generate-report-button produces PDF (backend returns %PDF header + >1KB). Calculator tab exposes open-wizard, open-calc-volume/lbm/concentration. Historial tab shows summary cards (Casos=1, Cálculos=0, Notas=1), monthly bar chart, calc breakdown, recent activity with 1 tappable recent-case-* item. Perfil tab renders 'Preservia · v1.0.0', 'La app funciona sin necesidad de crear una cuenta.', NO 'Cerrar sesión' / logout / email — as required by no-auth mode. Biblioteca and Ayuda tabs load without red-screen errors. Only console warnings: pre-existing 'shadow*' style props and 'props.pointerEvents' deprecations from earlier iterations (non-blocking).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "React Native Web deprecation still logged: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Fires on Casos FAB and other elevated cards. Non-blocking. Reference: /app/frontend/app/(tabs)/index.tsx:302-306 (shadowColor/shadowOpacity/shadowRadius/shadowOffset)."},
+      {"component": "props.pointerEvents", "issue": "React Native Web deprecation: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking; pre-existing (likely from a third-party component such as expo-linear-gradient / gesture handler wrapper)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_no_auth_flow.py",
+    "/app/test_reports/pytest/no_auth_flow.xml"
+  ],
+  "action_items": [
+    "OPTIONAL cleanup: /app/backend/tests/test_preservia_api.py is now stale — it targets the old auth-based endpoints (/api/auth/register, /api/auth/login, per-user isolation via token) which have been effectively neutralized (get_current_user ignores Authorization). Recommend deleting it or renaming to test_legacy_auth_deprecated.py so future testing agents don't confuse it with the current API contract.",
+    "OPTIONAL cleanup: server.py still exposes /api/auth/register, /api/auth/login, /api/auth/google (they hit db.users but are unreachable from the frontend since login/register screens were deleted). If truly no-auth going forward, delete these routes and the RegisterInput/LoginInput/GoogleInput models to reduce dead code and attack surface. Also the unused ADMIN_EMAILS logic and get_current_admin become no-ops (get_current_admin always returns LOCAL_USER which is is_admin=True) — this means any client can add/delete /api/catalog/documents even though the frontend hides those controls. If catalog uploads should be gated, restore a real admin check or drop the /catalog write endpoints. Reference: /app/backend/server.py:155-156, 871-919.",
+    "OPTIONAL: migrate shadow* -> boxShadow on FAB (index.tsx) and any other elevated cards to silence the React Native Web deprecation warnings.",
+    "OPTIONAL: /app/backend/server.py still stores photos as base64 in notes (NoteInput.photos), but the frontend no longer sends any photos. Consider removing the 'photos' field from NoteInput to keep the API contract tight."
+  ],
+  "critical_code_review_comments": [
+    "Auth removal is clean on the frontend: AuthContext.tsx now exports a static LOCAL_USER, app/index.tsx routes to /welcome or /(tabs) based on the 'preservia_seen_welcome' storage flag, and no screen reads a token. src/api.ts is not shown here but the backend log shows requests going through without Authorization headers.",
+    "Backend get_current_user now unconditionally returns LOCAL_USER — this means ALL data across ALL app installs is stored under a single user_id 'local_user'. This is fine for a single-tenant local-only app but is a hard multi-tenancy blocker; anyone with the public URL can read/modify every case. Consider adding at minimum a client-generated device_id header if isolation between installs is ever needed.",
+    "get_current_admin -> LOCAL_USER (is_admin=True) means the /catalog/documents write endpoints (POST/DELETE) are open to the public even though the frontend hides the upload button. This should be addressed if the /catalog is expected to be curated.",
+    "server.py mixes legacy auth routes (still functional against db.users) with the new no-auth mode. The dead code path (register/login/google) will confuse future maintainers.",
+    "PDF still supports photos in notes (build_pdf loops n.get('photos')) but the frontend cannot add them; this is dead but harmless.",
+    "/api/stats correctly computes 6 monthly buckets ordered oldest->newest, exposes active_cases/archived_cases separately, and recent_cases uses updated_at desc — matches the Historial screen expectations."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_no_auth_flow.py (NEW – 15 no-auth pytest cases)"
+  ],
+  "success_rate": { "backend": "100% (15/15 pytest)", "frontend": "100% (Welcome carousel + persistence, Casos CRUD + archive/unarchive, notes without photos, PDF report, Historial cards/chart/recent nav, Perfil no-auth copy, Biblioteca/Ayuda load OK, light theme readable across all screens)" },
+  "seed_data_creation": "One case 'Caso Sin Cuenta' (Ref. NA-1) was created by the pytest suite and later deleted at end. One additional UI-created case 'TEST UI NoAuth Case' + one note remained after the run (visible in Historial). Both live under user_id 'local_user'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL: https://preservia-cases.preview.emergentagent.com/api (no Authorization needed). All requests go under user_id 'local_user'. Key frontend testIDs: welcome-skip, welcome-next, cases-search-input, filter-active, filter-archived, new-case-fab, case-card-<id>, case-back, case-archive, case-delete, tab-calc/notes/report, open-wizard, open-calc-<type>, note-text-input, save-note-button, generate-report-button, stat-cases/calcs/notes, stats-scroll, recent-case-<id>. To force the Welcome screen again, run `localStorage.clear()` before reload (persistence key = 'preservia_seen_welcome'). New-case modal 'Crear caso' button uses Spanish label text (no dedicated testID; use page.get_by_text('Crear caso') if the automated flow needs to submit it) — consider adding a testID like case-create-submit for future stability."
+}

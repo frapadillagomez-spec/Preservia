@@ -13,10 +13,10 @@ const PDF_HTML = (b64: string) => `<!doctype html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=4">
 <style>
-  html,body{margin:0;padding:0;background:#0F172A;}
+  html,body{margin:0;padding:0;background:#FFFFFF;}
   #pages{padding:8px 6px 24px;}
-  canvas{width:100%;height:auto;display:block;margin:0 auto 10px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.4);}
-  #msg{color:#94A3B8;font-family:-apple-system,Roboto,sans-serif;padding:24px;text-align:center;}
+  canvas{width:100%;height:auto;display:block;margin:0 auto 10px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);}
+  #msg{color:#64748B;font-family:-apple-system,Roboto,sans-serif;padding:24px;text-align:center;}
 </style>
 </head>
 <body>

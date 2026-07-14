@@ -1,13 +1,23 @@
+import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { Redirect } from "expo-router";
 
-import { useAuth } from "@/src/context/AuthContext";
+import { storage } from "@/src/utils/storage";
 import { colors } from "@/src/theme";
 
-export default function Index() {
-  const { user, loading, googleBusy } = useAuth();
+const WELCOME_KEY = "preservia_seen_welcome";
 
-  if (loading || googleBusy) {
+export default function Index() {
+  const [target, setTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const seen = await storage.getItem<boolean>(WELCOME_KEY, false);
+      setTarget(seen ? "/(tabs)" : "/welcome");
+    })();
+  }, []);
+
+  if (!target) {
     return (
       <View
         testID="boot-loading"
@@ -18,5 +28,5 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={user ? "/(tabs)" : "/login"} />;
+  return <Redirect href={target as any} />;
 }

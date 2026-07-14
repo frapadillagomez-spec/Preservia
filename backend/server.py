@@ -136,25 +136,23 @@ def public_user(u: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+LOCAL_USER = {
+    "user_id": "local_user",
+    "email": "local@preservia.mx",
+    "name": "Profesional",
+    "picture": "",
+    "provider": "local",
+    "is_admin": True,
+}
+
+
 async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="No autenticado")
-    token = authorization.split(" ", 1)[1]
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Sesión expirada")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = await db.users.find_one({"user_id": payload.get("sub")}, {"_id": 0})
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuario no encontrado")
-    return user
+    # No-account mode: the app runs without authentication. All data is stored
+    # under a single shared local user.
+    return LOCAL_USER
 
 
 async def get_current_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    if user.get("email", "").lower() not in ADMIN_EMAILS:
-        raise HTTPException(status_code=403, detail="Requiere permisos de administrador")
     return user
 
 
