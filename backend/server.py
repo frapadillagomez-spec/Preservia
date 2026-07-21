@@ -95,6 +95,7 @@ class DocumentInput(BaseModel):
 
 class CatalogInput(BaseModel):
     category: str  # ficha_tecnica | hoja_seguridad
+    subcategory: Optional[str] = None  # for ficha_tecnica: arteriales|cavidades|co_pre_inyectores|miscelaneos
     title: str
     filename: str
     pdf_base64: str
@@ -866,16 +867,23 @@ async def delete_document(doc_id: str, user: Dict[str, Any] = Depends(get_curren
 
 # ----------------------------- Shared catalog (admin-managed) -----------------------------
 CATALOG_CATEGORIES = {"ficha_tecnica", "hoja_seguridad"}
+FICHA_SUBCATEGORIES = {"arteriales", "cavidades", "co_pre_inyectores", "miscelaneos"}
 
 
 @api_router.post("/catalog/documents")
 async def add_catalog_document(data: CatalogInput, user: Dict[str, Any] = Depends(get_current_admin)):
     if data.category not in CATALOG_CATEGORIES:
         raise HTTPException(status_code=400, detail="Categoria invalida")
+    subcategory = None
+    if data.category == "ficha_tecnica":
+        if data.subcategory not in FICHA_SUBCATEGORIES:
+            raise HTTPException(status_code=400, detail="Subcategoria invalida")
+        subcategory = data.subcategory
     grid_id, size = await store_pdf(data.pdf_base64, data.filename)
     doc = {
         "doc_id": f"cat_{uuid.uuid4().hex[:12]}",
         "category": data.category,
+        "subcategory": subcategory,
         "title": data.title,
         "filename": data.filename,
         "grid_id": grid_id,

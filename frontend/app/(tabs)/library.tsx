@@ -21,13 +21,21 @@ import { REFERENCE } from "@/src/data/reference";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar } from "@/src/components/BrandLogo";
 
-type Doc = { doc_id: string; title: string; filename: string; size: number; created_at: string; category?: string };
+type Doc = { doc_id: string; title: string; filename: string; size: number; created_at: string; category?: string; subcategory?: string | null };
 type Tab = "reference" | "catalog" | "documents";
 type Cat = "ficha_tecnica" | "hoja_seguridad";
+type Sub = "arteriales" | "cavidades" | "co_pre_inyectores" | "miscelaneos";
 
 const CATS: { key: Cat; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: "ficha_tecnica", label: "Fichas Técnicas", icon: "document-attach-outline" },
   { key: "hoja_seguridad", label: "Hojas de Seguridad", icon: "shield-checkmark-outline" },
+];
+
+const SUBCATS: { key: Sub; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: "arteriales", label: "Arteriales", icon: "water-outline" },
+  { key: "cavidades", label: "Cavidades", icon: "cube-outline" },
+  { key: "co_pre_inyectores", label: "Co/Pre Inyectores", icon: "git-merge-outline" },
+  { key: "miscelaneos", label: "Misceláneos", icon: "albums-outline" },
 ];
 
 function fmtSize(bytes: number) {
@@ -59,6 +67,7 @@ export default function Library() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [catalog, setCatalog] = useState<Doc[]>([]);
   const [cat, setCat] = useState<Cat>("ficha_tecnica");
+  const [folder, setFolder] = useState<Sub | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
@@ -113,6 +122,7 @@ export default function Library() {
       const base64 = await readPickedPdf(asset.uri);
       await api.post("/catalog/documents", {
         category: cat,
+        subcategory: cat === "ficha_tecnica" ? folder : undefined,
         title: asset.name?.replace(/\.pdf$/i, "") || "Documento",
         filename: asset.name || "documento.pdf",
         pdf_base64: base64,
@@ -141,7 +151,17 @@ export default function Library() {
     loadAll();
   };
 
-  const catalogFiltered = catalog.filter((d) => d.category === cat);
+  const isFichaRoot = cat === "ficha_tecnica" && folder === null;
+  const inFicha = (d: Doc, key: Sub) =>
+    key === "miscelaneos" ? !d.subcategory || d.subcategory === "miscelaneos" : d.subcategory === key;
+  const docsInView = catalog.filter((d) => {
+    if (d.category !== cat) return false;
+    if (cat === "ficha_tecnica") return folder ? inFicha(d, folder) : false;
+    return true;
+  });
+  const subCount = (key: Sub) =>
+    catalog.filter((d) => d.category === "ficha_tecnica" && inFicha(d, key)).length;
+  const folderLabel = SUBCATS.find((s) => s.key === folder)?.label ?? "";
 
   const renderDocCard = (d: Doc, scope: "catalog" | "library", onDelete?: (id: string) => void) => (
     <Pressable
@@ -223,7 +243,10 @@ export default function Library() {
               <Pressable
                 key={c.key}
                 testID={`cat-chip-${c.key}`}
-                onPress={() => setCat(c.key)}
+                onPress={() => {
+                  setCat(c.key);
+                  setFolder(null);
+                }}
                 style={[styles.chip, cat === c.key && styles.chipActive]}
               >
                 <Ionicons
@@ -236,29 +259,60 @@ export default function Library() {
             ))}
           </View>
 
+          {/* Folder breadcrumb when inside a Ficha Técnica folder */}
+          {cat === "ficha_tecnica" && folder !== null && (
+            <Pressable testID="ficha-folder-back" style={styles.breadcrumb} onPress={() => setFolder(null)}>
+              <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+              <Ionicons name="folder-outline" size={16} color={colors.onSurfaceSecondary} />
+              <Text style={styles.breadcrumbText}>{folderLabel}</Text>
+            </Pressable>
+          )}
+
           {loading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.onSurfaceSecondary} />
             </View>
-          ) : catalogFiltered.length === 0 ? (
+          ) : isFichaRoot ? (
+            <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+              {SUBCATS.map((s) => (
+                <Pressable
+                  key={s.key}
+                  testID={`ficha-folder-${s.key}`}
+                  style={({ pressed }) => [styles.folderCard, pressed && { opacity: 0.85 }]}
+                  onPress={() => setFolder(s.key)}
+                >
+                  <View style={styles.folderIcon}>
+                    <Ionicons name={s.icon} size={22} color={colors.onSurface} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.refTitle}>{s.label}</Text>
+                    <Text style={styles.refSummary}>
+                      {subCount(s.key)} documento{subCount(s.key) === 1 ? "" : "s"}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : docsInView.length === 0 ? (
             <View style={styles.center}>
               <Ionicons name="folder-open-outline" size={44} color={colors.onSurfaceTertiary} />
               <Text style={styles.emptyTitle}>Sin documentos</Text>
               <Text style={styles.emptySub}>
                 {isAdmin
-                  ? "Publica la primera ficha o hoja de seguridad para tu equipo."
-                  : "Aún no hay documentos publicados en esta categoría."}
+                  ? "Publica el primer documento en esta carpeta."
+                  : "Aún no hay documentos publicados aquí."}
               </Text>
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-              {catalogFiltered.map((d) =>
+              {docsInView.map((d) =>
                 renderDocCard(d, "catalog", isAdmin ? deleteCatalog : undefined),
               )}
             </ScrollView>
           )}
 
-          {isAdmin && (
+          {isAdmin && !isFichaRoot && (
             <Pressable
               testID="upload-catalog-button"
               onPress={uploadCatalog}
@@ -377,6 +431,35 @@ const styles = StyleSheet.create({
   },
   refTitle: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg },
   refSummary: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2 },
+  breadcrumb: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  breadcrumbText: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.base },
+  folderCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  folderIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   docCard: {
     flexDirection: "row",
     alignItems: "center",
