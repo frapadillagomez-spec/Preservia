@@ -18,6 +18,14 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 const STEPS = ["Masa magra", "Dilución", "Volumen"];
 
+const LBM_METHOD_OPTS = [
+  { key: "average", label: "Promedio (3)" },
+  { key: "janmahasatian", label: "Janmahasatian" },
+  { key: "boer", label: "Boer" },
+  { key: "james", label: "James" },
+] as const;
+type LbmMethod = (typeof LBM_METHOD_OPTS)[number]["key"];
+
 export default function Wizard() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -28,6 +36,7 @@ export default function Wizard() {
   const [weight, setWeight] = useState("");
   const [height, setHeight] = useState("");
   const [sex, setSex] = useState<"male" | "female">("male");
+  const [method, setMethod] = useState<LbmMethod>("average");
   const [lbm, setLbm] = useState<number | null>(null);
   const [busy1, setBusy1] = useState(false);
   // step 2 - dilution
@@ -61,7 +70,7 @@ export default function Wizard() {
     try {
       const resp = await api.post("/calculate", {
         type: "lbm",
-        inputs: { weight_kg: w, height_cm: h, sex },
+        inputs: { weight_kg: w, height_cm: h, sex, method },
       });
       setLbm(resp.results.lbm_kg);
     } catch (e: any) {
@@ -84,6 +93,7 @@ export default function Wizard() {
           desired_index_pct: num(c2),
           fluid_index_pct: num(c1),
           concentrate_ml: num(v1),
+          lbm_method: method,
         },
       });
       setResult(resp);
@@ -98,7 +108,7 @@ export default function Wizard() {
     setSaving(true);
     try {
       const base = { weight_kg: num(weight), height_cm: num(height), sex };
-      await api.post(`/cases/${caseId}/calculations`, { type: "lbm", inputs: base });
+      await api.post(`/cases/${caseId}/calculations`, { type: "lbm", inputs: { ...base, method } });
       await api.post(`/cases/${caseId}/calculations`, {
         type: "injection",
         inputs: {
@@ -107,6 +117,7 @@ export default function Wizard() {
           desired_index_pct: num(c2),
           fluid_index_pct: num(c1),
           concentrate_ml: num(v1),
+          lbm_method: method,
         },
       });
       toast.show("Cálculos guardados en el caso", "success");
@@ -162,7 +173,9 @@ export default function Wizard() {
         {step === 0 && (
             <>
               <Text style={styles.stepTitle}>Paso 1 · Masa magra corporal</Text>
-              <Text style={styles.stepSub}>Fórmula de Boer. Se usará como base del volumen de solución.</Text>
+              <Text style={styles.stepSub}>
+                Elige el método (Janmahasatian, Boer, James o promedio). Se usará como base del volumen.
+              </Text>
               <View style={styles.segment}>
                 {(["male", "female"] as const).map((s) => (
                   <Pressable
@@ -176,6 +189,25 @@ export default function Wizard() {
                   >
                     <Text style={[styles.segmentText, sex === s && styles.segmentTextActive]}>
                       {s === "male" ? "Masculino" : "Femenino"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.selectorLabel}>Método de cálculo</Text>
+              <View style={styles.methodRow}>
+                {LBM_METHOD_OPTS.map((m) => (
+                  <Pressable
+                    key={m.key}
+                    testID={`wiz-method-${m.key}`}
+                    onPress={() => {
+                      setMethod(m.key);
+                      setLbm(null);
+                      setResult(null);
+                    }}
+                    style={[styles.methodChip, method === m.key && styles.methodChipActive]}
+                  >
+                    <Text style={[styles.methodText, method === m.key && styles.methodTextActive]}>
+                      {m.label}
                     </Text>
                   </Pressable>
                 ))}
@@ -214,6 +246,9 @@ export default function Wizard() {
                 <View testID="wiz-lbm-result" style={styles.resultCard}>
                   <Text style={styles.resultLabel}>Masa magra</Text>
                   <Text style={styles.resultValue}>{lbm} kg</Text>
+                  <Text style={styles.resultHint}>
+                    Método: {LBM_METHOD_OPTS.find((m) => m.key === method)?.label}
+                  </Text>
                 </View>
               )}
             </>
@@ -415,6 +450,18 @@ const styles = StyleSheet.create({
   stepSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.base, marginBottom: spacing.lg, lineHeight: 20 },
   hintLine: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: -spacing.sm, marginBottom: spacing.md, lineHeight: 18 },
   selectorLabel: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base, marginBottom: spacing.xs },
+  methodRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
+  methodChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  methodChipActive: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
+  methodText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  methodTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   segment: {
     flexDirection: "row",
     backgroundColor: colors.surfaceSecondary,

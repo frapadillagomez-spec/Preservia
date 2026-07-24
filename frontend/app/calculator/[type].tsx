@@ -17,9 +17,17 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 type FieldDef = { key: string; label: string; placeholder: string };
 
+export const LBM_METHOD_OPTS = [
+  { key: "average", label: "Promedio (3)" },
+  { key: "janmahasatian", label: "Janmahasatian" },
+  { key: "boer", label: "Boer" },
+  { key: "james", label: "James" },
+] as const;
+export type LbmMethod = (typeof LBM_METHOD_OPTS)[number]["key"];
+
 const CONFIG: Record<
   string,
-  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean }
+  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean; hasMethod?: boolean }
 > = {
   volume: {
     title: "Volumen de solución",
@@ -31,9 +39,10 @@ const CONFIG: Record<
   },
   lbm: {
     title: "Masa magra corporal",
-    subtitle: "Fórmula de Boer (peso, estatura y sexo)",
+    subtitle: "Elige el método: Janmahasatian, Boer, James o el promedio de los 3",
     icon: "body-outline",
     hasSex: true,
+    hasMethod: true,
     fields: [
       { key: "weight_kg", label: "Peso corporal (kg)", placeholder: "Ej. 70" },
       { key: "height_cm", label: "Estatura (cm)", placeholder: "Ej. 172" },
@@ -59,6 +68,7 @@ export default function Calculator() {
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [sex, setSex] = useState<"male" | "female">("male");
+  const [method, setMethod] = useState<LbmMethod>("average");
   const [caseType, setCaseType] = useState<"normal" | "jaundice" | "edema">("normal");
   const [basis, setBasis] = useState<"total" | "lean">("total");
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
@@ -81,6 +91,7 @@ export default function Calculator() {
       inputs[f.key] = v;
     }
     if (cfg.hasSex) inputs.sex = sex;
+    if (cfg.hasMethod) inputs.method = method;
     if (cfg.hasCaseType) inputs.case_type = caseType;
     if (cfg.hasBasis) {
       inputs.basis = basis;
@@ -198,6 +209,29 @@ export default function Calculator() {
                   >
                     <Text style={[styles.segmentText, caseType === c.key && styles.segmentTextActive]}>
                       {c.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {cfg.hasMethod && (
+            <View>
+              <Text style={styles.selectorLabel}>Método de cálculo</Text>
+              <View style={styles.methodRow}>
+                {LBM_METHOD_OPTS.map((m) => (
+                  <Pressable
+                    key={m.key}
+                    testID={`lbm-method-${m.key}`}
+                    onPress={() => {
+                      setMethod(m.key);
+                      setResult(null);
+                    }}
+                    style={[styles.methodChip, method === m.key && styles.methodChipActive]}
+                  >
+                    <Text style={[styles.methodText, method === m.key && styles.methodTextActive]}>
+                      {m.label}
                     </Text>
                   </Pressable>
                 ))}
@@ -370,6 +404,18 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     marginBottom: spacing.xs,
   },
+  methodRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
+  methodChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  methodChipActive: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
+  methodText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  methodTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   segmentBtn: { flex: 1, alignItems: "center", paddingVertical: spacing.md, borderRadius: radius.sm },
   segmentActive: { backgroundColor: colors.surfaceInverse },
   segmentText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base },

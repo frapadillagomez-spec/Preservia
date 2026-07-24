@@ -190,6 +190,44 @@ async def delete_pdf(doc: Dict[str, Any]) -> None:
 
 
 # ----------------------------- Calculations -----------------------------
+LBM_METHODS = {"janmahasatian", "boer", "james", "average"}
+LBM_METHOD_LABELS = {
+    "janmahasatian": "Janmahasatian",
+    "boer": "Boer",
+    "james": "James",
+    "average": "Promedio (3 metodos)",
+}
+
+
+def compute_lbm(sex: str, weight_kg: float, height_cm: float, method: str = "average") -> Dict[str, Any]:
+    """Lean body mass by Boer, James or Janmahasatian, or the average of the three.
+    W in kg, H in cm. Returns the selected value plus each component."""
+    method = (method or "average").lower()
+    if method not in LBM_METHODS:
+        method = "average"
+    is_female = str(sex).lower().startswith("f")
+    height_m = height_cm / 100.0
+    bmi = weight_kg / (height_m ** 2) if height_m > 0 else 0.0
+    if is_female:
+        boer = 0.252 * weight_kg + 0.473 * height_cm - 48.3
+        james = 1.07 * weight_kg - 148 * (weight_kg / height_cm) ** 2 if height_cm > 0 else 0.0
+        janma = (9270 * weight_kg) / (8780 + 244 * bmi) if bmi > 0 else 0.0
+    else:
+        boer = 0.407 * weight_kg + 0.267 * height_cm - 19.2
+        james = 1.10 * weight_kg - 128 * (weight_kg / height_cm) ** 2 if height_cm > 0 else 0.0
+        janma = (9270 * weight_kg) / (6680 + 216 * bmi) if bmi > 0 else 0.0
+    components = {
+        "boer": max(boer, 0.0),
+        "james": max(james, 0.0),
+        "janmahasatian": max(janma, 0.0),
+    }
+    if method == "average":
+        selected = sum(components.values()) / 3.0
+    else:
+        selected = components[method]
+    return {"lbm": max(selected, 0.0), "method": method, "components": components}
+
+
 def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
     """Standard thanatopraxy formulas. Returns {results, summary}."""
     try:
@@ -200,13 +238,14 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             # Effective weight used for the solution estimate. Lean body mass
             # gives a more accurate requirement since fat tissue is less vascular.
             lbm_kg = None
+            lbm_method_label = None
             if basis == "lean":
                 sex = str(inputs.get("sex", "male")).lower()
                 height_cm = float(inputs["height_cm"])
-                if sex.startswith("f"):
-                    lbm_kg = 0.252 * weight_kg + 0.473 * height_cm - 48.3
-                else:
-                    lbm_kg = 0.407 * weight_kg + 0.267 * height_cm - 19.2
+                method = str(inputs.get("lbm_method", "average")).lower()
+                lbm_info = compute_lbm(sex, weight_kg, height_cm, method)
+                lbm_kg = lbm_info["lbm"]
+                lbm_method_label = LBM_METHOD_LABELS[lbm_info["method"]]
                 effective_kg = max(lbm_kg, 0)
             else:
                 effective_kg = weight_kg
@@ -226,6 +265,7 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             }
             if lbm_kg is not None:
                 results["lbm_kg"] = round(lbm_kg, 1)
+                results["lbm_method"] = lbm_method_label
             basis_txt = f" (masa magra {results.get('lbm_kg')} kg)" if lbm_kg is not None else ""
             summary = (
                 f"{results['liters']} L de solucion arterial (~{results['gallons']} gal) "
@@ -237,17 +277,21 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             sex = str(inputs.get("sex", "male")).lower()
             weight_kg = float(inputs["weight_kg"])
             height_cm = float(inputs["height_cm"])
-            if sex.startswith("f"):
-                lbm = 0.252 * weight_kg + 0.473 * height_cm - 48.3
-            else:
-                lbm = 0.407 * weight_kg + 0.267 * height_cm - 19.2
+            method = str(inputs.get("method", "average")).lower()
+            info = compute_lbm(sex, weight_kg, height_cm, method)
+            lbm = info["lbm"]
+            comp = info["components"]
             fat_kg = max(weight_kg - lbm, 0)
             results = {
                 "lbm_kg": round(lbm, 1),
+                "method": LBM_METHOD_LABELS[info["method"]],
+                "boer_kg": round(comp["boer"], 1),
+                "james_kg": round(comp["james"], 1),
+                "janmahasatian_kg": round(comp["janmahasatian"], 1),
                 "fat_kg": round(fat_kg, 1),
                 "fat_pct": round((fat_kg / weight_kg) * 100, 1) if weight_kg else 0,
             }
-            summary = f"Masa magra: {results['lbm_kg']} kg"
+            summary = f"Masa magra: {results['lbm_kg']} kg ({results['method']})"
             return {"results": results, "summary": summary}
 
         if calc_type == "injection":
@@ -270,11 +314,10 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 raise ValueError("El indice deseado no puede superar el indice del fluido")
             if concentrate_ml <= 0:
                 raise ValueError("El volumen de concentrado (V1) debe ser mayor que 0")
-            if sex.startswith("f"):
-                lbm = 0.252 * weight_kg + 0.473 * height_cm - 48.3
-            else:
-                lbm = 0.407 * weight_kg + 0.267 * height_cm - 19.2
-            lbm = max(lbm, 0)
+            method = str(inputs.get("lbm_method", "average")).lower()
+            lbm_info = compute_lbm(sex, weight_kg, height_cm, method)
+            lbm = lbm_info["lbm"]
+            lbm_method_label = LBM_METHOD_LABELS[lbm_info["method"]]
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
             factor = factors.get(case_type, 1.0)
             labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
@@ -293,6 +336,7 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             water_injection_ml = max(total_ml - formaldehyde_ml, 0)
             results = {
                 "lbm_kg": round(lbm, 1),
+                "lbm_method": lbm_method_label,
                 "total_l": round(total_ml / 1000.0, 2),
                 "total_ml": round(total_ml, 0),
                 "concentrate_ml": round(concentrate_ml, 0),
@@ -673,10 +717,18 @@ INPUT_LABELS = {
     "sex": "Sexo",
     "case_type": "Tipo de caso",
     "total_solution_l": "Solucion total (L)",
+    "method": "Metodo masa magra",
+    "lbm_method": "Metodo masa magra",
 }
 
 SEX_LABELS = {"male": "Masculino", "female": "Femenino"}
 CASE_TYPE_LABELS = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
+METHOD_LABELS = {
+    "janmahasatian": "Janmahasatian",
+    "boer": "Boer",
+    "james": "James",
+    "average": "Promedio (3 metodos)",
+}
 
 
 def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any]) -> bytes:
@@ -757,6 +809,8 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
                     v = SEX_LABELS.get(str(v).lower(), v)
                 elif k == "case_type":
                     v = CASE_TYPE_LABELS.get(str(v).lower(), v)
+                elif k in ("method", "lbm_method"):
+                    v = METHOD_LABELS.get(str(v).lower(), v)
                 lines.append(f"{esc(INPUT_LABELS.get(k, k))}: {esc(v)}")
             return "<br/>".join(lines)
 
