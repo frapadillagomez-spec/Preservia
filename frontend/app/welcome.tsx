@@ -15,13 +15,11 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 
-import { storage } from "@/src/utils/storage";
 import { BrandLogo } from "@/src/components/BrandLogo";
 import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 const { width } = Dimensions.get("window");
-const WELCOME_KEY = "preservia_seen_welcome";
 
 type Slide = {
   key: string;
@@ -59,10 +57,7 @@ export default function Welcome() {
 
   const total = SLIDES.length + 1; // +1 for the intro/brand slide
 
-  const finish = async () => {
-    await storage.setItem(WELCOME_KEY, true);
-    router.replace("/(tabs)");
-  };
+  const finish = () => router.replace("/(tabs)");
 
   const goTo = (i: number) => {
     Haptics.selectionAsync().catch(() => {});
