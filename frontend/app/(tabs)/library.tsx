@@ -122,7 +122,7 @@ export default function Library() {
       const base64 = await readPickedPdf(asset.uri);
       await api.post("/catalog/documents", {
         category: cat,
-        subcategory: cat === "ficha_tecnica" ? folder : undefined,
+        subcategory: folder,
         title: asset.name?.replace(/\.pdf$/i, "") || "Documento",
         filename: asset.name || "documento.pdf",
         pdf_base64: base64,
@@ -151,16 +151,15 @@ export default function Library() {
     loadAll();
   };
 
-  const isFichaRoot = cat === "ficha_tecnica" && folder === null;
-  const inFicha = (d: Doc, key: Sub) =>
+  const isRoot = folder === null;
+  const inFolder = (d: Doc, key: Sub) =>
     key === "miscelaneos" ? !d.subcategory || d.subcategory === "miscelaneos" : d.subcategory === key;
   const docsInView = catalog.filter((d) => {
     if (d.category !== cat) return false;
-    if (cat === "ficha_tecnica") return folder ? inFicha(d, folder) : false;
-    return true;
+    return folder ? inFolder(d, folder) : false;
   });
   const subCount = (key: Sub) =>
-    catalog.filter((d) => d.category === "ficha_tecnica" && inFicha(d, key)).length;
+    catalog.filter((d) => d.category === cat && inFolder(d, key)).length;
   const folderLabel = SUBCATS.find((s) => s.key === folder)?.label ?? "";
 
   const renderDocCard = (d: Doc, scope: "catalog" | "library", onDelete?: (id: string) => void) => (
@@ -259,8 +258,8 @@ export default function Library() {
             ))}
           </View>
 
-          {/* Folder breadcrumb when inside a Ficha Técnica folder */}
-          {cat === "ficha_tecnica" && folder !== null && (
+          {/* Folder breadcrumb when inside a folder */}
+          {folder !== null && (
             <Pressable testID="ficha-folder-back" style={styles.breadcrumb} onPress={() => setFolder(null)}>
               <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
               <Ionicons name="folder-outline" size={16} color={colors.onSurfaceSecondary} />
@@ -272,7 +271,7 @@ export default function Library() {
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.onSurfaceSecondary} />
             </View>
-          ) : isFichaRoot ? (
+          ) : isRoot ? (
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
               {SUBCATS.map((s) => (
                 <Pressable
@@ -312,7 +311,7 @@ export default function Library() {
             </ScrollView>
           )}
 
-          {isAdmin && !isFichaRoot && (
+          {isAdmin && !isRoot && (
             <Pressable
               testID="upload-catalog-button"
               onPress={uploadCatalog}
