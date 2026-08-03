@@ -21,6 +21,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 
 import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
@@ -29,7 +30,7 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
-type Attachment = { att_id: string; label: string; filename: string; size: number; created_at: string };
+type Attachment = { att_id: string; label: string; filename: string; size: number; created_at: string; kind?: string };
 type CaseData = {
   case_id: string;
   name: string;
@@ -170,7 +171,8 @@ export default function CaseDetail() {
         await api.post(`/cases/${id}/attachments`, {
           label: attLabel,
           filename: asset.fileName || "documento.jpg",
-          image_base64: asset.base64,
+          kind: "image",
+          data_base64: asset.base64,
         });
       }
       toast.show("Documento adjuntado", "success");
@@ -200,10 +202,50 @@ export default function CaseDetail() {
     await uploadPicked(res);
   };
 
-  const openAttachment = async (att: Attachment) => {
+  const addFromPdf = async () => {
+    const res = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    const asset = res.assets[0];
+    setAddingAtt(true);
     try {
-      const resp = await api.get<{ attachment: { image_base64: string } }>(`/attachments/${att.att_id}`);
-      setPreviewUri(`data:image/*;base64,${resp.attachment.image_base64}`);
+      const b64 =
+        Platform.OS === "web"
+          ? await new Promise<string>((resolve, reject) => {
+              fetch(asset.uri)
+                .then((r) => r.blob())
+                .then((blob) => {
+                  const reader = new FileReader();
+                  reader.onload = () => resolve(String(reader.result).split(",")[1]);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                })
+                .catch(reject);
+            })
+          : await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      await api.post(`/cases/${id}/attachments`, {
+        label: attLabel,
+        filename: asset.name || "documento.pdf",
+        kind: "pdf",
+        data_base64: b64,
+      });
+      toast.show("Documento adjuntado", "success");
+      setAddModal(false);
+      load();
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo adjuntar el PDF", "error");
+    } finally {
+      setAddingAtt(false);
+    }
+  };
+
+  const openAttachment = async (att: Attachment) => {
+    if (att.kind === "pdf") {
+      router.push({ pathname: "/viewer", params: { scope: "attachment", id: att.att_id, title: att.label } });
+      return;
+    }
+    try {
+      const resp = await api.get<{ attachment: { data_base64: string } }>(`/attachments/${att.att_id}`);
+      setPreviewUri(`data:image/*;base64,${resp.attachment.data_base64}`);
     } catch {
       toast.show("No se pudo abrir el documento", "error");
     }
@@ -476,7 +518,11 @@ export default function CaseDetail() {
                   onPress={() => openAttachment(a)}
                 >
                   <View style={styles.attIcon}>
-                    <Ionicons name="document-attach-outline" size={20} color={colors.onSurface} />
+                    <Ionicons
+                      name={a.kind === "pdf" ? "document-text-outline" : "image-outline"}
+                      size={20}
+                      color={colors.onSurface}
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.attLabel} numberOfLines={1}>{a.label}</Text>
@@ -585,6 +631,14 @@ export default function CaseDetail() {
                   icon="images-outline"
                   variant="outline"
                   onPress={addFromGallery}
+                  style={{ marginTop: spacing.sm, alignSelf: "stretch" }}
+                />
+                <Button
+                  testID="att-pdf"
+                  label="Subir PDF"
+                  icon="document-outline"
+                  variant="outline"
+                  onPress={addFromPdf}
                   style={{ marginTop: spacing.sm, alignSelf: "stretch" }}
                 />
               </>

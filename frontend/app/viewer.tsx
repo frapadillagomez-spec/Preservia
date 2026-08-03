@@ -69,6 +69,7 @@ export default function Viewer() {
   const [error, setError] = useState(false);
   const [sharing, setSharing] = useState(false);
   const isReport = scope === "report";
+  const isAttachment = scope === "attachment";
 
   useEffect(() => {
     (async () => {
@@ -77,6 +78,10 @@ export default function Viewer() {
           const resp = await api.get<{ filename: string; pdf_base64: string }>(`/cases/${id}/report`);
           setB64(resp.pdf_base64);
           setFilename(resp.filename || "Reporte.pdf");
+        } else if (isAttachment) {
+          const resp = await api.get<{ attachment: { data_base64: string; filename: string } }>(`/attachments/${id}`);
+          setB64(resp.attachment.data_base64);
+          setFilename(resp.attachment.filename || "Documento.pdf");
         } else {
           const endpoint = scope === "catalog" ? "/catalog/documents" : "/library/documents";
           const resp = await api.get<{ document: { pdf_base64: string } }>(`${endpoint}/${id}`);
@@ -86,7 +91,7 @@ export default function Viewer() {
         setError(true);
       }
     })();
-  }, [scope, id, isReport]);
+  }, [scope, id, isReport, isAttachment]);
 
   const share = async () => {
     if (!b64) return;
@@ -118,7 +123,7 @@ export default function Viewer() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title || "Documento"}
         </Text>
-        {isReport && b64 ? (
+        {(isReport || isAttachment) && b64 ? (
           <Pressable testID="viewer-share" onPress={share} hitSlop={12} disabled={sharing}>
             {sharing ? (
               <ActivityIndicator size="small" color={colors.onSurface} />

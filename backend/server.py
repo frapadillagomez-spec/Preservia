@@ -24,6 +24,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak,
 )
+from pypdf import PdfReader, PdfWriter
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -96,8 +97,9 @@ class DocumentInput(BaseModel):
 
 class AttachmentInput(BaseModel):
     label: str
-    filename: Optional[str] = "documento.jpg"
-    image_base64: str
+    filename: Optional[str] = "documento"
+    kind: Optional[str] = "image"  # image | pdf
+    data_base64: str
 
 
 class CatalogInput(BaseModel):
@@ -936,6 +938,36 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     return buf.getvalue()
 
 
+def _label_cover(label: str) -> bytes:
+    """A single-page PDF with the attachment label as a heading."""
+    buf = BytesIO()
+    d = SimpleDocTemplate(buf, pagesize=A4, topMargin=24 * mm, leftMargin=18 * mm, rightMargin=18 * mm)
+    styles = getSampleStyleSheet()
+    h = ParagraphStyle("cov", parent=styles["Heading2"], fontSize=14, textColor=colors.HexColor("#0F172A"))
+    d.build([Paragraph(label or "Documento adjunto", h)])
+    return buf.getvalue()
+
+
+def merge_pdf_attachments(base_pdf: bytes, pdf_atts: List[Dict[str, Any]]) -> bytes:
+    writer = PdfWriter()
+    for page in PdfReader(BytesIO(base_pdf)).pages:
+        writer.add_page(page)
+    for a in pdf_atts:
+        raw = a.get("bytes")
+        if not raw:
+            continue
+        try:
+            for page in PdfReader(BytesIO(_label_cover(a.get("label")))).pages:
+                writer.add_page(page)
+            for page in PdfReader(BytesIO(raw)).pages:
+                writer.add_page(page)
+        except Exception:
+            continue
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
 @api_router.get("/cases/{case_id}/report")
 async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
@@ -945,7 +977,11 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
     atts = await db.attachments.find({"case_id": case_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
     for a in atts:
         a["bytes"] = await load_bytes(a)
-    pdf_bytes = build_pdf(c, notes, user, atts)
+    image_atts = [a for a in atts if a.get("kind") != "pdf"]
+    pdf_atts = [a for a in atts if a.get("kind") == "pdf"]
+    pdf_bytes = build_pdf(c, notes, user, image_atts)
+    if pdf_atts:
+        pdf_bytes = merge_pdf_attachments(pdf_bytes, pdf_atts)
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     safe = (c.get("name") or "caso").replace(" ", "_")[:40]
     return {"filename": f"Preservia_{safe}.pdf", "pdf_base64": b64, "mime": "application/pdf"}
@@ -961,14 +997,18 @@ async def add_attachment(case_id: str, data: AttachmentInput, user: Dict[str, An
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     label = data.label if data.label in ATTACHMENT_LABELS else (data.label or "Documento adjunto")
-    raw_b64 = data.image_base64.split(",", 1)[1] if data.image_base64.startswith("data:") else data.image_base64
-    grid_id, size = await store_pdf(raw_b64, data.filename or "documento.jpg")
+    kind = "pdf" if (data.kind or "").lower() == "pdf" else "image"
+    raw_b64 = data.data_base64.split(",", 1)[1] if data.data_base64.startswith("data:") else data.data_base64
+    default_name = "documento.pdf" if kind == "pdf" else "documento.jpg"
+    grid_id, size = await store_pdf(raw_b64, data.filename or default_name)
     att = {
         "att_id": f"att_{uuid.uuid4().hex[:12]}",
         "case_id": case_id,
         "user_id": user["user_id"],
         "label": label,
-        "filename": data.filename or "documento.jpg",
+        "filename": data.filename or default_name,
+        "kind": kind,
+        "mime": "application/pdf" if kind == "pdf" else "image/jpeg",
         "grid_id": grid_id,
         "size": size,
         "created_at": now_iso(),
@@ -992,7 +1032,9 @@ async def get_attachment(att_id: str, user: Dict[str, Any] = Depends(get_current
     a = await db.attachments.find_one({"att_id": att_id, "user_id": user["user_id"]}, {"_id": 0})
     if not a:
         raise HTTPException(status_code=404, detail="Adjunto no encontrado")
-    a["image_base64"] = await load_pdf_b64(a)
+    a["data_base64"] = await load_pdf_b64(a)
+    a.setdefault("kind", "image")
+    a.setdefault("mime", "application/pdf" if a["kind"] == "pdf" else "image/jpeg")
     a.pop("grid_id", None)
     return {"attachment": a}
 
