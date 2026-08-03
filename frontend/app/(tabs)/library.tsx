@@ -21,10 +21,16 @@ import { REFERENCE } from "@/src/data/reference";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar } from "@/src/components/BrandLogo";
 
-type Doc = { doc_id: string; title: string; filename: string; size: number; created_at: string; category?: string; subcategory?: string | null };
+type Doc = { doc_id: string; title: string; filename: string; size: number; created_at: string; category?: string; subcategory?: string | null; folder?: string | null };
 type Tab = "reference" | "catalog" | "documents";
 type Cat = "ficha_tecnica" | "hoja_seguridad";
 type Sub = "arteriales" | "cavidades" | "co_pre_inyectores" | "miscelaneos";
+type LibFolder = "general" | "formacion_continua";
+
+const LIB_FOLDERS: { key: LibFolder; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: "general", label: "General", icon: "documents-outline" },
+  { key: "formacion_continua", label: "Formación Continua", icon: "school-outline" },
+];
 
 const CATS: { key: Cat; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: "ficha_tecnica", label: "Fichas Técnicas", icon: "document-attach-outline" },
@@ -68,6 +74,7 @@ export default function Library() {
   const [catalog, setCatalog] = useState<Doc[]>([]);
   const [cat, setCat] = useState<Cat>("ficha_tecnica");
   const [folder, setFolder] = useState<Sub | null>(null);
+  const [docFolder, setDocFolder] = useState<LibFolder | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
@@ -102,6 +109,7 @@ export default function Library() {
       await api.post("/library/documents", {
         title: asset.name?.replace(/\.pdf$/i, "") || "Documento",
         filename: asset.name || "documento.pdf",
+        folder: docFolder || "general",
         pdf_base64: base64,
       });
       toast.show("Documento subido", "success");
@@ -161,6 +169,11 @@ export default function Library() {
   const subCount = (key: Sub) =>
     catalog.filter((d) => d.category === cat && inFolder(d, key)).length;
   const folderLabel = SUBCATS.find((s) => s.key === folder)?.label ?? "";
+
+  const inLibFolder = (d: Doc, key: LibFolder) => (d.folder || "general") === key;
+  const docsInFolder = docFolder ? docs.filter((d) => inLibFolder(d, docFolder)) : [];
+  const libCount = (key: LibFolder) => docs.filter((d) => inLibFolder(d, key)).length;
+  const docFolderLabel = LIB_FOLDERS.find((f) => f.key === docFolder)?.label ?? "";
 
   const renderDocCard = (d: Doc, scope: "catalog" | "library", onDelete?: (id: string) => void) => (
     <Pressable
@@ -332,36 +345,69 @@ export default function Library() {
 
       {tab === "documents" && (
         <View style={styles.flex}>
+          {/* Breadcrumb when inside a folder */}
+          {docFolder !== null && (
+            <Pressable testID="doc-folder-back" style={styles.breadcrumb} onPress={() => setDocFolder(null)}>
+              <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+              <Ionicons name="folder-outline" size={16} color={colors.onSurfaceSecondary} />
+              <Text style={styles.breadcrumbText}>{docFolderLabel}</Text>
+            </Pressable>
+          )}
+
           {loading ? (
             <View style={styles.center}>
               <ActivityIndicator size="large" color={colors.onSurfaceSecondary} />
             </View>
-          ) : docs.length === 0 ? (
+          ) : docFolder === null ? (
+            <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+              {LIB_FOLDERS.map((f) => (
+                <Pressable
+                  key={f.key}
+                  testID={`doc-folder-${f.key}`}
+                  style={({ pressed }) => [styles.folderCard, pressed && { opacity: 0.85 }]}
+                  onPress={() => setDocFolder(f.key)}
+                >
+                  <View style={styles.folderIcon}>
+                    <Ionicons name={f.icon} size={22} color={colors.onSurface} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.refTitle}>{f.label}</Text>
+                    <Text style={styles.refSummary}>
+                      {libCount(f.key)} documento{libCount(f.key) === 1 ? "" : "s"}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : docsInFolder.length === 0 ? (
             <View style={styles.center}>
               <Ionicons name="document-attach-outline" size={44} color={colors.onSurfaceTertiary} />
               <Text style={styles.emptyTitle}>Sin documentos</Text>
-              <Text style={styles.emptySub}>Sube tus guías o protocolos en PDF para tenerlos a mano.</Text>
+              <Text style={styles.emptySub}>Sube tus guías o protocolos en PDF a esta carpeta.</Text>
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-              {docs.map((d) => renderDocCard(d, "library", deleteDoc))}
+              {docsInFolder.map((d) => renderDocCard(d, "library", deleteDoc))}
             </ScrollView>
           )}
 
-          <Pressable
-            testID="upload-doc-button"
-            onPress={uploadDoc}
-            style={({ pressed }) => [styles.fab, { bottom: spacing.lg }, pressed && { opacity: 0.85 }]}
-          >
-            {uploading ? (
-              <ActivityIndicator color={colors.onSurfaceInverse} />
-            ) : (
-              <>
-                <Ionicons name="cloud-upload-outline" size={22} color={colors.onSurfaceInverse} />
-                <Text style={styles.fabText}>Subir PDF</Text>
-              </>
-            )}
-          </Pressable>
+          {docFolder !== null && (
+            <Pressable
+              testID="upload-doc-button"
+              onPress={uploadDoc}
+              style={({ pressed }) => [styles.fab, { bottom: spacing.lg }, pressed && { opacity: 0.85 }]}
+            >
+              {uploading ? (
+                <ActivityIndicator color={colors.onSurfaceInverse} />
+              ) : (
+                <>
+                  <Ionicons name="cloud-upload-outline" size={22} color={colors.onSurfaceInverse} />
+                  <Text style={styles.fabText}>Subir PDF</Text>
+                </>
+              )}
+            </Pressable>
+          )}
         </View>
       )}
     </View>

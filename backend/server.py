@@ -90,6 +90,7 @@ class NoteInput(BaseModel):
 class DocumentInput(BaseModel):
     title: str
     filename: str
+    folder: Optional[str] = "general"
     pdf_base64: str
 
 
@@ -921,14 +922,19 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
 
 
 # ----------------------------- Library documents -----------------------------
+LIBRARY_FOLDERS = {"general", "formacion_continua"}
+
+
 @api_router.post("/library/documents")
 async def add_document(data: DocumentInput, user: Dict[str, Any] = Depends(get_current_user)):
+    folder = data.folder if data.folder in LIBRARY_FOLDERS else "general"
     grid_id, size = await store_pdf(data.pdf_base64, data.filename)
     doc = {
         "doc_id": f"doc_{uuid.uuid4().hex[:12]}",
         "user_id": user["user_id"],
         "title": data.title,
         "filename": data.filename,
+        "folder": folder,
         "grid_id": grid_id,
         "size": size,
         "created_at": now_iso(),
