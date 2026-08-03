@@ -71,6 +71,7 @@ export default function CaseDetail() {
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -163,6 +164,49 @@ export default function CaseDetail() {
       toast.show(e?.detail || "No se pudo generar el reporte", "error");
     } finally {
       setReporting(false);
+    }
+  };
+
+  const safeName = (data?.name || "caso").replace(/[^\w\-]+/g, "_").slice(0, 40) || "caso";
+
+  const exportData = async () => {
+    if (!data) return;
+    setExporting(true);
+    try {
+      const payload = {
+        app: "Preservia",
+        export_version: 1,
+        exported_at: new Date().toISOString(),
+        case: {
+          case_id: data.case_id,
+          name: data.name,
+          case_ref: data.case_ref,
+          deceased_name: data.deceased_name,
+          date: data.date,
+          status: data.status,
+          calculations: data.calculations,
+          notes: data.notes.map((n) => ({ note_id: n.note_id, text: n.text, date: n.date })),
+        },
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const filename = `Preservia_${safeName}.json`;
+      if (Platform.OS === "web") {
+        const link = document.createElement("a");
+        link.href = `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+        link.download = filename;
+        link.click();
+      } else {
+        const uri = FileSystem.cacheDirectory + filename;
+        await FileSystem.writeAsStringAsync(uri, json);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, { mimeType: "application/json", UTI: "public.json" });
+        }
+      }
+      toast.show("Datos exportados", "success");
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudieron exportar los datos", "error");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -342,17 +386,29 @@ export default function CaseDetail() {
             <Ionicons name="document-text-outline" size={40} color={colors.onSurface} />
             <Text style={styles.reportTitle}>Reporte del caso</Text>
             <Text style={styles.reportSub}>
-              Genera un PDF profesional con los datos del caso, {data.calculations.length} cálculo(s) y{" "}
-              {data.notes.length} nota(s).
+              Genera un PDF profesional o exporta los datos del caso ({data.calculations.length} cálculo(s) y{" "}
+              {data.notes.length} nota(s)) para guardarlos donde prefieras.
             </Text>
             <Button
               testID="generate-report-button"
-              label={Platform.OS === "web" ? "Descargar PDF" : "Generar y compartir PDF"}
+              label={Platform.OS === "web" ? "Descargar PDF" : "Exportar / Guardar PDF"}
               icon="download-outline"
               onPress={generateReport}
               loading={reporting}
               style={{ marginTop: spacing.lg, alignSelf: "stretch" }}
             />
+            <Button
+              testID="export-data-button"
+              label={Platform.OS === "web" ? "Descargar datos (JSON)" : "Exportar datos (JSON)"}
+              icon="code-download-outline"
+              variant="outline"
+              onPress={exportData}
+              loading={exporting}
+              style={{ marginTop: spacing.md, alignSelf: "stretch" }}
+            />
+            <Text style={styles.exportHint}>
+              En el móvil podrás guardarlo en Archivos (iCloud/dispositivo), Google Drive, Dropbox, OneDrive y más.
+            </Text>
           </View>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
@@ -518,6 +574,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.sm,
     lineHeight: 21,
+  },
+  exportHint: {
+    color: colors.onSurfaceTertiary,
+    fontFamily: font.regular,
+    fontSize: fontSize.sm,
+    textAlign: "center",
+    marginTop: spacing.md,
+    lineHeight: 18,
   },
   summaryRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
   summaryItem: {
