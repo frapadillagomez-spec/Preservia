@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -14,8 +15,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 
 import { api } from "@/src/api";
+import { useToast } from "@/src/components/Toast";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar } from "@/src/components/BrandLogo";
 
@@ -47,12 +51,14 @@ function initials(name: string) {
 
 export default function CasesList() {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"active" | "archived">("active");
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +94,27 @@ export default function CasesList() {
   const goNew = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     router.push("/case/new");
+  };
+
+  const importCase = async () => {
+    const res = await DocumentPicker.getDocumentAsync({ type: "application/json", copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    setImporting(true);
+    try {
+      const uri = res.assets[0].uri;
+      const text =
+        Platform.OS === "web"
+          ? await (await fetch(uri)).text()
+          : await FileSystem.readAsStringAsync(uri);
+      const payload = JSON.parse(text);
+      await api.post("/cases/import", payload);
+      toast.show("Caso importado", "success");
+      load();
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo importar el caso (archivo inválido)", "error");
+    } finally {
+      setImporting(false);
+    }
   };
 
   const renderCard = ({ item }: { item: Case }) => (
@@ -126,7 +153,24 @@ export default function CasesList() {
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <BrandBar />
       <View style={styles.header}>
-        <Text style={styles.title}>Casos</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Casos</Text>
+          <Pressable
+            testID="import-case-button"
+            onPress={importCase}
+            disabled={importing}
+            style={({ pressed }) => [styles.importBtn, pressed && { opacity: 0.85 }]}
+          >
+            {importing ? (
+              <ActivityIndicator size="small" color={colors.onSurface} />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={16} color={colors.onSurface} />
+                <Text style={styles.importText}>Importar</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
         <View style={styles.search}>
           <Ionicons name="search" size={18} color={colors.onSurfaceTertiary} />
           <TextInput
@@ -225,7 +269,20 @@ export default function CasesList() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
-  title: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xxxl, marginBottom: spacing.md },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  title: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xxxl },
+  importBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    height: 38,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  importText: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
   search: {
     flexDirection: "row",
     alignItems: "center",

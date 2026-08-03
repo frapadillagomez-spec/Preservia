@@ -490,6 +490,55 @@ async def create_case(data: CaseInput, user: Dict[str, Any] = Depends(get_curren
     return {"case": case_public(dict(doc))}
 
 
+@api_router.post("/cases/import")
+async def import_case(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    src = payload.get("case") if isinstance(payload.get("case"), dict) else payload
+    if not isinstance(src, dict) or not (src.get("name") or src.get("deceased_name")):
+        raise HTTPException(status_code=400, detail="Archivo de caso invalido")
+    case_id = f"case_{uuid.uuid4().hex[:12]}"
+    valid_types = {"volume", "lbm", "concentration", "injection"}
+    calculations: List[Dict[str, Any]] = []
+    for c in (src.get("calculations") or []):
+        if not isinstance(c, dict) or c.get("type") not in valid_types:
+            continue
+        calculations.append({
+            "calc_id": f"calc_{uuid.uuid4().hex[:10]}",
+            "type": c.get("type"),
+            "label": c.get("label") or CALC_LABELS.get(c.get("type"), c.get("type")),
+            "inputs": c.get("inputs", {}),
+            "results": c.get("results", {}),
+            "summary": c.get("summary", ""),
+            "created_at": now_iso(),
+        })
+    name = str(src.get("name") or "Caso importado")
+    doc = {
+        "case_id": case_id,
+        "user_id": user["user_id"],
+        "name": name,
+        "case_ref": str(src.get("case_ref") or ""),
+        "deceased_name": str(src.get("deceased_name") or ""),
+        "date": src.get("date") or now_iso(),
+        "status": src.get("status") if src.get("status") in ("active", "archived") else "active",
+        "calculations": calculations,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.cases.insert_one(doc)
+    for n in (src.get("notes") or []):
+        if not isinstance(n, dict) or not (n.get("text") or "").strip():
+            continue
+        await db.notes.insert_one({
+            "note_id": f"note_{uuid.uuid4().hex[:10]}",
+            "case_id": case_id,
+            "user_id": user["user_id"],
+            "text": n.get("text", ""),
+            "date": n.get("date") or now_iso(),
+            "photos": [],
+            "created_at": now_iso(),
+        })
+    return {"case": case_public(dict(doc))}
+
+
 @api_router.get("/cases/{case_id}")
 async def get_case(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
