@@ -1,7 +1,10 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
+  Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -10,12 +13,14 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 
 import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
@@ -24,6 +29,7 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
+type Attachment = { att_id: string; label: string; filename: string; size: number; created_at: string };
 type CaseData = {
   case_id: string;
   name: string;
@@ -41,7 +47,9 @@ const CALCULATORS: { type: string; label: string; icon: keyof typeof Ionicons.gl
   { type: "concentration", label: "Concentración / Dilución", icon: "beaker-outline" },
 ];
 
-type Tab = "calc" | "notes" | "report";
+const ATT_LABELS = ["Certificado de Defunción", "Hoja de Autorización", "Etiquetas de Identificación"];
+
+type Tab = "calc" | "notes" | "docs" | "report";
 
 function fmtDate(iso: string) {
   try {
@@ -72,11 +80,20 @@ export default function CaseDetail() {
   const [savingNote, setSavingNote] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  // attachments (scanned documents)
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [addModal, setAddModal] = useState(false);
+  const [attLabel, setAttLabel] = useState(ATT_LABELS[0]);
+  const [addingAtt, setAddingAtt] = useState(false);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     try {
       setError(false);
       const resp = await api.get<{ case: CaseData }>(`/cases/${id}`);
       setData(resp.case);
+      const at = await api.get<{ attachments: Attachment[] }>(`/cases/${id}/attachments`);
+      setAttachments(at.attachments);
     } catch {
       setError(true);
     } finally {
@@ -118,6 +135,83 @@ export default function CaseDetail() {
   const deleteNote = async (noteId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     await api.del(`/notes/${noteId}`);
+    load();
+  };
+
+  // ---------- attachments (scan documents) ----------
+  const ensurePermission = async (kind: "camera" | "media") => {
+    const get = kind === "camera" ? ImagePicker.getCameraPermissionsAsync : ImagePicker.getMediaLibraryPermissionsAsync;
+    const req = kind === "camera" ? ImagePicker.requestCameraPermissionsAsync : ImagePicker.requestMediaLibraryPermissionsAsync;
+    const cur = await get();
+    if (cur.granted) return true;
+    const res = await req();
+    if (res.granted) return true;
+    if (!res.canAskAgain) {
+      Alert.alert(
+        kind === "camera" ? "Permiso de cámara" : "Permiso de galería",
+        "Habilítalo en Ajustes para adjuntar documentos al caso.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Abrir Ajustes", onPress: () => Linking.openSettings() },
+        ],
+      );
+    } else {
+      toast.show(kind === "camera" ? "Permiso de cámara denegado" : "Permiso de galería denegado", "error");
+    }
+    return false;
+  };
+
+  const uploadPicked = async (res: ImagePicker.ImagePickerResult) => {
+    if (res.canceled) return;
+    setAddingAtt(true);
+    try {
+      for (const asset of res.assets) {
+        if (!asset.base64) continue;
+        await api.post(`/cases/${id}/attachments`, {
+          label: attLabel,
+          filename: asset.fileName || "documento.jpg",
+          image_base64: asset.base64,
+        });
+      }
+      toast.show("Documento adjuntado", "success");
+      setAddModal(false);
+      load();
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo adjuntar el documento", "error");
+    } finally {
+      setAddingAtt(false);
+    }
+  };
+
+  const addFromCamera = async () => {
+    if (!(await ensurePermission("camera"))) return;
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.6, base64: true, allowsEditing: true });
+    await uploadPicked(res);
+  };
+
+  const addFromGallery = async () => {
+    if (!(await ensurePermission("media"))) return;
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.6,
+      base64: true,
+      allowsMultipleSelection: true,
+    });
+    await uploadPicked(res);
+  };
+
+  const openAttachment = async (att: Attachment) => {
+    try {
+      const resp = await api.get<{ attachment: { image_base64: string } }>(`/attachments/${att.att_id}`);
+      setPreviewUri(`data:image/*;base64,${resp.attachment.image_base64}`);
+    } catch {
+      toast.show("No se pudo abrir el documento", "error");
+    }
+  };
+
+  const deleteAttachment = async (attId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    await api.del(`/attachments/${attId}`);
     load();
   };
 
@@ -246,6 +340,7 @@ export default function CaseDetail() {
         {([
           { key: "calc", label: "Cálculos" },
           { key: "notes", label: "Notas" },
+          { key: "docs", label: "Docs" },
           { key: "report", label: "Reporte" },
         ] as const).map((s) => (
           <Pressable
@@ -360,6 +455,56 @@ export default function CaseDetail() {
         </KeyboardAvoidingView>
       )}
 
+      {tab === "docs" && (
+        <View style={styles.flex}>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <Text style={styles.docsIntro}>
+              Escanea o adjunta documentos del caso (Certificado de Defunción, Hoja de Autorización, Etiquetas de
+              Identificación). Se incluirán al final del reporte PDF.
+            </Text>
+            {attachments.length === 0 ? (
+              <View style={styles.docsEmpty}>
+                <Ionicons name="scan-outline" size={40} color={colors.onSurfaceTertiary} />
+                <Text style={styles.emptyInline}>Aún no hay documentos adjuntos.</Text>
+              </View>
+            ) : (
+              attachments.map((a) => (
+                <Pressable
+                  key={a.att_id}
+                  testID={`attachment-${a.att_id}`}
+                  style={styles.attRow}
+                  onPress={() => openAttachment(a)}
+                >
+                  <View style={styles.attIcon}>
+                    <Ionicons name="document-attach-outline" size={20} color={colors.onSurface} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.attLabel} numberOfLines={1}>{a.label}</Text>
+                    <Text style={styles.attSub} numberOfLines={1}>{a.filename}</Text>
+                  </View>
+                  <Pressable
+                    testID={`attachment-delete-${a.att_id}`}
+                    onPress={() => deleteAttachment(a.att_id)}
+                    hitSlop={10}
+                    style={{ padding: spacing.xs }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color={colors.error} />
+                  </Pressable>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+          <Pressable
+            testID="scan-doc-button"
+            onPress={() => setAddModal(true)}
+            style={({ pressed }) => [styles.fab, { bottom: spacing.lg }, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="scan-outline" size={22} color={colors.onSurfaceInverse} />
+            <Text style={styles.fabText}>Escanear documento</Text>
+          </Pressable>
+        </View>
+      )}
+
       {tab === "report" && (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <View style={styles.reportCard}>
@@ -402,6 +547,61 @@ export default function CaseDetail() {
           </View>
         </ScrollView>
       )}
+
+      {/* Add attachment modal */}
+      <Modal visible={addModal} transparent animationType="fade" onRequestClose={() => setAddModal(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => !addingAtt && setAddModal(false)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Adjuntar documento</Text>
+            <Text style={styles.modalSub}>Tipo de documento</Text>
+            <View style={styles.labelWrap}>
+              {ATT_LABELS.map((l) => (
+                <Pressable
+                  key={l}
+                  testID={`att-label-${l}`}
+                  onPress={() => setAttLabel(l)}
+                  style={[styles.labelChip, attLabel === l && styles.labelChipActive]}
+                >
+                  <Text style={[styles.labelChipText, attLabel === l && styles.labelChipTextActive]}>{l}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {addingAtt ? (
+              <View style={{ paddingVertical: spacing.lg }}>
+                <ActivityIndicator color={colors.onSurface} />
+              </View>
+            ) : (
+              <>
+                <Button
+                  testID="att-camera"
+                  label="Tomar foto"
+                  icon="camera-outline"
+                  onPress={addFromCamera}
+                  style={{ marginTop: spacing.md, alignSelf: "stretch" }}
+                />
+                <Button
+                  testID="att-gallery"
+                  label="Elegir de galería"
+                  icon="images-outline"
+                  variant="outline"
+                  onPress={addFromGallery}
+                  style={{ marginTop: spacing.sm, alignSelf: "stretch" }}
+                />
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Image preview modal */}
+      <Modal visible={!!previewUri} transparent animationType="fade" onRequestClose={() => setPreviewUri(null)}>
+        <Pressable style={styles.previewBackdrop} onPress={() => setPreviewUri(null)}>
+          <Pressable testID="att-preview-close" style={styles.previewClose} onPress={() => setPreviewUri(null)} hitSlop={12}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+          {previewUri && <Image source={previewUri} style={styles.previewImg} contentFit="contain" />}
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -457,6 +657,73 @@ const styles = StyleSheet.create({
   segmentText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base },
   segmentTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: 120 },
+  docsIntro: { color: colors.onSurfaceSecondary, fontFamily: font.regular, fontSize: fontSize.base, lineHeight: 21, marginBottom: spacing.lg },
+  docsEmpty: { alignItems: "center", gap: spacing.md, paddingVertical: spacing.xxl * 1.5 },
+  attRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  attIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attLabel: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.base },
+  attSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2 },
+  fab: {
+    position: "absolute",
+    right: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceInverse,
+    paddingHorizontal: spacing.lg,
+    height: 52,
+    borderRadius: radius.pill,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  fabText: { color: colors.onSurfaceInverse, fontFamily: font.semibold, fontSize: fontSize.base },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.45)", justifyContent: "flex-end" },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  modalTitle: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xl },
+  modalSub: { color: colors.onSurfaceTertiary, fontFamily: font.medium, fontSize: fontSize.sm, marginTop: spacing.md, marginBottom: spacing.sm },
+  labelWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  labelChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  labelChipActive: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
+  labelChipText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  labelChipTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
+  previewBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)", alignItems: "center", justifyContent: "center" },
+  previewClose: { position: "absolute", top: 48, right: 24, zIndex: 2 },
+  previewImg: { width: "92%", height: "80%" },
   sectionLabel: {
     color: colors.onSurfaceTertiary,
     fontFamily: font.medium,

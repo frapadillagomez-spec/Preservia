@@ -22,7 +22,7 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -92,6 +92,12 @@ class DocumentInput(BaseModel):
     filename: str
     folder: Optional[str] = "general"
     pdf_base64: str
+
+
+class AttachmentInput(BaseModel):
+    label: str
+    filename: Optional[str] = "documento.jpg"
+    image_base64: str
 
 
 class CatalogInput(BaseModel):
@@ -188,6 +194,14 @@ async def delete_pdf(doc: Dict[str, Any]) -> None:
             await fs.delete(ObjectId(gid))
         except Exception:
             pass
+
+
+async def load_bytes(doc: Dict[str, Any]) -> bytes:
+    gid = doc.get("grid_id")
+    if not gid:
+        return b""
+    grid_out = await fs.open_download_stream(ObjectId(gid))
+    return await grid_out.read()
 
 
 # ----------------------------- Calculations -----------------------------
@@ -781,7 +795,8 @@ METHOD_LABELS = {
 }
 
 
-def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any]) -> bytes:
+def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any],
+              attachments: Optional[List[Dict[str, Any]]] = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -905,6 +920,18 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     elems.append(Spacer(1, 16))
     elems.append(Paragraph("Documento generado por Preservia. Uso profesional.", small))
 
+    for att in (attachments or []):
+        raw = att.get("bytes")
+        if not raw:
+            continue
+        try:
+            elems.append(PageBreak())
+            elems.append(Paragraph(att.get("label") or "Documento adjunto", h2))
+            elems.append(Spacer(1, 6))
+            elems.append(RLImage(BytesIO(raw), width=170 * mm, height=225 * mm, kind="proportional"))
+        except Exception:
+            continue
+
     doc.build(elems)
     return buf.getvalue()
 
@@ -915,10 +942,69 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     notes = await db.notes.find({"case_id": case_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
-    pdf_bytes = build_pdf(c, notes, user)
+    atts = await db.attachments.find({"case_id": case_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    for a in atts:
+        a["bytes"] = await load_bytes(a)
+    pdf_bytes = build_pdf(c, notes, user, atts)
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     safe = (c.get("name") or "caso").replace(" ", "_")[:40]
     return {"filename": f"Preservia_{safe}.pdf", "pdf_base64": b64, "mime": "application/pdf"}
+
+
+# ----------------------------- Case attachments (scanned documents) -----------------------------
+ATTACHMENT_LABELS = ["Certificado de Defunción", "Hoja de Autorización", "Etiquetas de Identificación"]
+
+
+@api_router.post("/cases/{case_id}/attachments")
+async def add_attachment(case_id: str, data: AttachmentInput, user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    label = data.label if data.label in ATTACHMENT_LABELS else (data.label or "Documento adjunto")
+    raw_b64 = data.image_base64.split(",", 1)[1] if data.image_base64.startswith("data:") else data.image_base64
+    grid_id, size = await store_pdf(raw_b64, data.filename or "documento.jpg")
+    att = {
+        "att_id": f"att_{uuid.uuid4().hex[:12]}",
+        "case_id": case_id,
+        "user_id": user["user_id"],
+        "label": label,
+        "filename": data.filename or "documento.jpg",
+        "grid_id": grid_id,
+        "size": size,
+        "created_at": now_iso(),
+    }
+    await db.attachments.insert_one(dict(att))
+    await db.cases.update_one({"case_id": case_id}, {"$set": {"updated_at": now_iso()}})
+    att.pop("grid_id", None)
+    return {"attachment": att}
+
+
+@api_router.get("/cases/{case_id}/attachments")
+async def list_attachments(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    atts = await db.attachments.find(
+        {"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0, "grid_id": 0}
+    ).sort("created_at", 1).to_list(50)
+    return {"attachments": atts}
+
+
+@api_router.get("/attachments/{att_id}")
+async def get_attachment(att_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    a = await db.attachments.find_one({"att_id": att_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+    a["image_base64"] = await load_pdf_b64(a)
+    a.pop("grid_id", None)
+    return {"attachment": a}
+
+
+@api_router.delete("/attachments/{att_id}")
+async def delete_attachment(att_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    a = await db.attachments.find_one({"att_id": att_id, "user_id": user["user_id"]})
+    if not a:
+        raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+    await delete_pdf(a)
+    await db.attachments.delete_one({"att_id": att_id})
+    return {"ok": True}
 
 
 # ----------------------------- Library documents -----------------------------
