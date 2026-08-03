@@ -70,7 +70,6 @@ export default function CaseDetail() {
   // note composer
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
-  const [reporting, setReporting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
@@ -141,30 +140,11 @@ export default function CaseDetail() {
     }
   };
 
-  const generateReport = async () => {
-    setReporting(true);
-    try {
-      const resp = await api.get<{ filename: string; pdf_base64: string }>(`/cases/${id}/report`);
-      if (Platform.OS === "web") {
-        const link = document.createElement("a");
-        link.href = `data:application/pdf;base64,${resp.pdf_base64}`;
-        link.download = resp.filename;
-        link.click();
-      } else {
-        const uri = FileSystem.cacheDirectory + resp.filename;
-        await FileSystem.writeAsStringAsync(uri, resp.pdf_base64, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, { mimeType: "application/pdf", UTI: "com.adobe.pdf" });
-        }
-      }
-      toast.show("Reporte generado", "success");
-    } catch (e: any) {
-      toast.show(e?.detail || "No se pudo generar el reporte", "error");
-    } finally {
-      setReporting(false);
-    }
+  const generateReport = () => {
+    router.push({
+      pathname: "/viewer",
+      params: { scope: "report", id: String(id), title: "Reporte del caso" },
+    });
   };
 
   const safeName = (data?.name || "caso").replace(/[^\w\-]+/g, "_").slice(0, 40) || "caso";
@@ -390,11 +370,10 @@ export default function CaseDetail() {
               {data.notes.length} nota(s)) para guardarlos donde prefieras.
             </Text>
             <Button
-              testID="generate-report-button"
-              label={Platform.OS === "web" ? "Descargar PDF" : "Exportar / Guardar PDF"}
-              icon="download-outline"
+              testID="preview-report-button"
+              label="Vista previa del reporte"
+              icon="eye-outline"
               onPress={generateReport}
-              loading={reporting}
               style={{ marginTop: spacing.lg, alignSelf: "stretch" }}
             />
             <Button
@@ -407,7 +386,8 @@ export default function CaseDetail() {
               style={{ marginTop: spacing.md, alignSelf: "stretch" }}
             />
             <Text style={styles.exportHint}>
-              En el móvil podrás guardarlo en Archivos (iCloud/dispositivo), Google Drive, Dropbox, OneDrive y más.
+              Revisa el reporte antes de guardarlo; desde la vista previa podrás guardarlo en Archivos
+              (iCloud/dispositivo), Google Drive, Dropbox, OneDrive y más.
             </Text>
           </View>
           <View style={styles.summaryRow}>

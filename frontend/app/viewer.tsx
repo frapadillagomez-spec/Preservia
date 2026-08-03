@@ -4,6 +4,8 @@ import { WebView } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 
 import { api } from "@/src/api";
 import { colors, font, fontSize, spacing } from "@/src/theme";
@@ -63,19 +65,49 @@ export default function Viewer() {
   const insets = useSafeAreaInsets();
   const { scope, id, title } = useLocalSearchParams<{ scope: string; id: string; title: string }>();
   const [b64, setB64] = useState<string | null>(null);
+  const [filename, setFilename] = useState("Reporte.pdf");
   const [error, setError] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const isReport = scope === "report";
 
   useEffect(() => {
     (async () => {
       try {
-        const endpoint = scope === "catalog" ? "/catalog/documents" : "/library/documents";
-        const resp = await api.get<{ document: { pdf_base64: string } }>(`${endpoint}/${id}`);
-        setB64(resp.document.pdf_base64);
+        if (isReport) {
+          const resp = await api.get<{ filename: string; pdf_base64: string }>(`/cases/${id}/report`);
+          setB64(resp.pdf_base64);
+          setFilename(resp.filename || "Reporte.pdf");
+        } else {
+          const endpoint = scope === "catalog" ? "/catalog/documents" : "/library/documents";
+          const resp = await api.get<{ document: { pdf_base64: string } }>(`${endpoint}/${id}`);
+          setB64(resp.document.pdf_base64);
+        }
       } catch {
         setError(true);
       }
     })();
-  }, [scope, id]);
+  }, [scope, id, isReport]);
+
+  const share = async () => {
+    if (!b64) return;
+    setSharing(true);
+    try {
+      if (Platform.OS === "web") {
+        const link = document.createElement("a");
+        link.href = `data:application/pdf;base64,${b64}`;
+        link.download = filename;
+        link.click();
+      } else {
+        const uri = FileSystem.cacheDirectory + filename;
+        await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, { mimeType: "application/pdf", UTI: "com.adobe.pdf" });
+        }
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + spacing.sm }]}>
@@ -86,7 +118,21 @@ export default function Viewer() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {title || "Documento"}
         </Text>
-        <View style={{ width: 26 }} />
+        {isReport && b64 ? (
+          <Pressable testID="viewer-share" onPress={share} hitSlop={12} disabled={sharing}>
+            {sharing ? (
+              <ActivityIndicator size="small" color={colors.onSurface} />
+            ) : (
+              <Ionicons
+                name={Platform.OS === "web" ? "download-outline" : "share-outline"}
+                size={24}
+                color={colors.onSurface}
+              />
+            )}
+          </Pressable>
+        ) : (
+          <View style={{ width: 26 }} />
+        )}
       </View>
 
       <View style={styles.body} testID="viewer-body">
