@@ -490,17 +490,20 @@ def case_public(c: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def next_case_number() -> str:
-    """Unique, non-repeating case number embedding year/month/day: PRV-YYYYMMDD-NNN."""
+    """Unique, non-repeating lot-style case number: PRV{YYMMDD}{LETTER}{NNNN}."""
     from pymongo import ReturnDocument
     now = datetime.now(timezone.utc)
-    day = now.strftime("%Y%m%d")
+    day = now.strftime("%y%m%d")
     r = await db.counters.find_one_and_update(
         {"_id": f"case_{day}"},
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=ReturnDocument.AFTER,
     )
-    return f"PRV-{day}-{r['seq']:03d}"
+    seq = r["seq"]
+    letter = chr(ord("A") + ((seq - 1) // 9999))
+    n = ((seq - 1) % 9999) + 1
+    return f"PRV{day}{letter}{n:04d}"
 
 
 def embalming_duration_text(start: Optional[str], end: Optional[str]) -> Optional[str]:
