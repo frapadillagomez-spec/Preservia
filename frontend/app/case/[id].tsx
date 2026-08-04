@@ -34,6 +34,7 @@ type Attachment = { att_id: string; label: string; filename: string; size: numbe
 type LogEntry = { log_id: string; product: string; form: string; quantity: number; unit: string; created_at: string };
 type CaseData = {
   case_id: string;
+  case_number?: string;
   name: string;
   case_ref: string;
   deceased_name: string;
@@ -433,9 +434,19 @@ export default function CaseDetail() {
               <Text style={styles.archivedText}>Archivado</Text>
             </View>
           ) : (
-            !!data.case_ref && <Text style={styles.headerSub}>Ref. {data.case_ref}</Text>
+            !!data.case_number && (
+              <Text style={styles.headerSub}>{data.case_number}</Text>
+            )
           )}
         </View>
+        <Pressable
+          testID="case-edit"
+          onPress={() => router.push(`/case/new?id=${id}`)}
+          hitSlop={12}
+          style={{ marginRight: spacing.md }}
+        >
+          <Ionicons name="create-outline" size={22} color={colors.onSurfaceSecondary} />
+        </Pressable>
         <Pressable testID="case-archive" onPress={toggleArchive} hitSlop={12} style={{ marginRight: spacing.md }}>
           <Ionicons
             name={data.status === "archived" ? "arrow-undo-outline" : "archive-outline"}

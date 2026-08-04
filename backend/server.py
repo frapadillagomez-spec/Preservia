@@ -71,6 +71,10 @@ class CaseInput(BaseModel):
     deceased_name: Optional[str] = ""
     date: Optional[str] = None
     status: Optional[str] = "active"
+    sex: Optional[str] = ""  # male | female | ""
+    date_of_death: Optional[str] = None
+    embalming_start: Optional[str] = None
+    embalming_end: Optional[str] = None
 
 
 class StatusInput(BaseModel):
@@ -485,6 +489,39 @@ def case_public(c: Dict[str, Any]) -> Dict[str, Any]:
     return c
 
 
+async def next_case_number() -> str:
+    """Unique, non-repeating case number embedding year/month/day: PRV-YYYYMMDD-NNN."""
+    from pymongo import ReturnDocument
+    now = datetime.now(timezone.utc)
+    day = now.strftime("%Y%m%d")
+    r = await db.counters.find_one_and_update(
+        {"_id": f"case_{day}"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return f"PRV-{day}-{r['seq']:03d}"
+
+
+def embalming_duration_text(start: Optional[str], end: Optional[str]) -> Optional[str]:
+    if not start or not end:
+        return None
+    try:
+        s = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        e = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+        mins = int((e - s).total_seconds() // 60)
+        if mins < 0:
+            return None
+        h, m = divmod(mins, 60)
+        if h and m:
+            return f"{h} h {m} min"
+        if h:
+            return f"{h} h"
+        return f"{m} min"
+    except Exception:
+        return None
+
+
 @api_router.get("/cases")
 async def list_cases(user: Dict[str, Any] = Depends(get_current_user)):
     cases = await db.cases.find({"user_id": user["user_id"]}, {"_id": 0}).sort("updated_at", -1).to_list(500)
@@ -498,17 +535,24 @@ async def list_cases(user: Dict[str, Any] = Depends(get_current_user)):
 @api_router.post("/cases")
 async def create_case(data: CaseInput, user: Dict[str, Any] = Depends(get_current_user)):
     case_id = f"case_{uuid.uuid4().hex[:12]}"
+    created = now_iso()
     doc = {
         "case_id": case_id,
+        "case_number": await next_case_number(),
         "user_id": user["user_id"],
         "name": data.name,
         "case_ref": data.case_ref or "",
         "deceased_name": data.deceased_name or "",
-        "date": data.date or now_iso(),
+        "sex": data.sex or "",
+        "date": data.date or created,
+        "date_of_death": data.date_of_death or None,
+        "embalming_date": created,  # coincide con la apertura del caso
+        "embalming_start": data.embalming_start or None,
+        "embalming_end": data.embalming_end or None,
         "status": data.status or "active",
         "calculations": [],
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
+        "created_at": created,
+        "updated_at": created,
     }
     await db.cases.insert_one(doc)
     return {"case": case_public(dict(doc))}
@@ -584,6 +628,10 @@ async def update_case(case_id: str, data: CaseInput, user: Dict[str, Any] = Depe
             "name": data.name,
             "case_ref": data.case_ref or "",
             "deceased_name": data.deceased_name or "",
+            "sex": data.sex or "",
+            "date_of_death": data.date_of_death or None,
+            "embalming_start": data.embalming_start or None,
+            "embalming_end": data.embalming_end or None,
             "status": data.status or c.get("status", "active"),
             "updated_at": now_iso(),
         }},
@@ -891,11 +939,27 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         elems.append(Paragraph("PRESERVIA", title))
     elems.append(Paragraph("Reporte profesional de caso - Tanatopraxia", subtitle))
 
+    def fmt_dateonly(iso: Optional[str]) -> str:
+        if not iso:
+            return "-"
+        try:
+            return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%d/%m/%Y")
+        except Exception:
+            return iso
+
+    sex_lbl = {"male": "Masculino", "female": "Femenino"}
+    dur = embalming_duration_text(case.get("embalming_start"), case.get("embalming_end"))
     info_rows = [
+        [Paragraph("N.º de caso", cell_label), Paragraph(esc(case.get("case_number") or "-"), cell_val)],
         [Paragraph("Caso", cell_label), Paragraph(esc(case.get("name", "-")), cell_val)],
         [Paragraph("ID / Referencia", cell_label), Paragraph(esc(case.get("case_ref") or "-"), cell_val)],
         [Paragraph("Fallecido", cell_label), Paragraph(esc(case.get("deceased_name") or "-"), cell_val)],
-        [Paragraph("Fecha del caso", cell_label), Paragraph(esc(fmt_date(case.get("date"))), cell_val)],
+        [Paragraph("Sexo", cell_label), Paragraph(esc(sex_lbl.get(case.get("sex"), "-")), cell_val)],
+        [Paragraph("Fecha de fallecimiento", cell_label), Paragraph(esc(fmt_dateonly(case.get("date_of_death"))), cell_val)],
+        [Paragraph("Fecha de embalsamamiento", cell_label), Paragraph(esc(fmt_dateonly(case.get("embalming_date") or case.get("date"))), cell_val)],
+        [Paragraph("Inicio de embalsamamiento", cell_label), Paragraph(esc(fmt_date(case.get("embalming_start"))), cell_val)],
+        [Paragraph("Termino de embalsamamiento", cell_label), Paragraph(esc(fmt_date(case.get("embalming_end"))), cell_val)],
+        [Paragraph("Tiempo consumido", cell_label), Paragraph(esc(dur or "-"), cell_val)],
         [Paragraph("Profesional", cell_label), Paragraph(esc(f"{user.get('name','')} ({user.get('email','')})"), cell_val)],
         [Paragraph("Generado", cell_label), Paragraph(esc(fmt_date(now_iso())), cell_val)],
     ]
