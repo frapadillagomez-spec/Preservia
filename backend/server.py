@@ -102,6 +102,13 @@ class AttachmentInput(BaseModel):
     data_base64: str
 
 
+class LogEntryInput(BaseModel):
+    product: str
+    form: str  # liquid | powder
+    quantity: float
+    unit: str  # oz | ml | g
+
+
 class CatalogInput(BaseModel):
     category: str  # ficha_tecnica | hoja_seguridad
     subcategory: Optional[str] = None  # for ficha_tecnica: arteriales|cavidades|co_pre_inyectores|miscelaneos
@@ -645,6 +652,48 @@ async def delete_calculation(case_id: str, calc_id: str, user: Dict[str, Any] = 
     return {"ok": True}
 
 
+# ----------------------------- Logbook (bitácora de productos) -----------------------------
+LOG_UNITS = {"liquid": {"oz", "ml"}, "powder": {"g"}}
+
+
+@api_router.post("/cases/{case_id}/logbook")
+async def add_log_entry(case_id: str, data: LogEntryInput, user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    form = data.form if data.form in ("liquid", "powder") else "liquid"
+    unit = data.unit if data.unit in LOG_UNITS[form] else next(iter(LOG_UNITS[form]))
+    if not data.product.strip():
+        raise HTTPException(status_code=400, detail="Producto requerido")
+    if data.quantity <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor que 0")
+    entry = {
+        "log_id": f"log_{uuid.uuid4().hex[:10]}",
+        "product": data.product.strip(),
+        "form": form,
+        "quantity": round(data.quantity, 2),
+        "unit": unit,
+        "created_at": now_iso(),
+    }
+    await db.cases.update_one(
+        {"case_id": case_id},
+        {"$push": {"logbook": entry}, "$set": {"updated_at": now_iso()}},
+    )
+    return {"entry": entry}
+
+
+@api_router.delete("/cases/{case_id}/logbook/{log_id}")
+async def delete_log_entry(case_id: str, log_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    await db.cases.update_one(
+        {"case_id": case_id},
+        {"$pull": {"logbook": {"log_id": log_id}}, "$set": {"updated_at": now_iso()}},
+    )
+    return {"ok": True}
+
+
 # ----------------------------- Notes -----------------------------
 @api_router.post("/cases/{case_id}/notes")
 async def add_note(case_id: str, data: NoteInput, user: Dict[str, Any] = Depends(get_current_user)):
@@ -901,6 +950,39 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         elems.append(ct)
     else:
         elems.append(Paragraph("Sin calculos registrados.", body))
+
+    # Bitácora de productos
+    logbook = case.get("logbook") or []
+    elems.append(Paragraph("Bitacora de productos", h2))
+    if logbook:
+        unit_lbl = {"oz": "oz", "ml": "mL", "g": "g"}
+        form_lbl = {"liquid": "Liquido", "powder": "Polvo"}
+        rows = [[Paragraph("<b>Producto</b>", cell), Paragraph("<b>Tipo</b>", cell),
+                 Paragraph("<b>Cantidad</b>", cell), Paragraph("<b>Unidad</b>", cell)]]
+        for e in logbook:
+            q = e.get("quantity")
+            q = int(q) if isinstance(q, (int, float)) and float(q).is_integer() else q
+            rows.append([
+                Paragraph(esc(e.get("product", "")), cell),
+                Paragraph(esc(form_lbl.get(e.get("form"), e.get("form", ""))), cell),
+                Paragraph(esc(q), cell),
+                Paragraph(esc(unit_lbl.get(e.get("unit"), e.get("unit", ""))), cell),
+            ])
+        lt = Table(rows, colWidths=[75 * mm, 32 * mm, 30 * mm, 28 * mm])
+        lt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), slate),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ]))
+        elems.append(lt)
+    else:
+        elems.append(Paragraph("Sin productos registrados.", body))
 
     elems.append(Paragraph("Notas del caso", h2))
     if notes:
