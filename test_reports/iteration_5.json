@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only verification of Preservia case-detail tab bar fix and header display (mobile viewport 390x844, Expo web). All 4 requested checks PASS. (1) Created a case via Casos -> new-case-fab -> filled 'Nombre del fallecido' with 'TEST Deceased Juan Pérez' -> Crear caso. Navigation replaced to /case/case_a4b0678e54a8. Header title correctly shows the deceased name (truncated 'TEST Deceased J…') and PRV case number 'PRV260806A0004' as subtitle. (2) All 5 tabs (Cálculos, Notas, Bitácora, Docs, Reporte) are rendered in ONE FIXED ROW with identical y=67px, identical width 70px each, x positions 21/91/160/230/299 — no horizontal scrolling required, every tab fully visible inside the 390px viewport. (3) Each tab is tappable and switches content correctly: tab-calc shows open-wizard + open-calc-volume/lbm/concentration; tab-notes shows note-text-input; tab-logbook shows add-log-button FAB; tab-docs shows scan-doc-button FAB; tab-report shows preview-report-button + export-data-button. (4) Case creation WITHOUT any deceased name also succeeds — new case case_0dad8c72a3c6 was created, header falls back to case number 'PRV260806A0005' only (no subtitle rendered, no dangling name), 5-tab bar again shows all buttons in a single row at y=53px (slightly higher because no subtitle in header). No red-screen errors. Only pre-existing non-blocking console warnings: React Native Web 'shadow*' style props and 'props.pointerEvents' deprecations already reported in iteration_4. Case-detail tab bar bug is confirmed fixed.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "Pre-existing RN Web deprecation warning ('shadow*' style props are deprecated. Use 'boxShadow'). Non-blocking. Reference: /app/frontend/app/(tabs)/index.tsx FAB + /app/frontend/app/case/[id].tsx:986-990 (fab shadow*)."},
+      {"component": "props.pointerEvents", "issue": "Pre-existing RN Web deprecation warning ('props.pointerEvents is deprecated. Use style.pointerEvents'). Non-blocking; likely from a third-party wrapper."}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "None required for the reported bug — the tab bar fix works as intended and the deceased-name/case-number header logic is correct.",
+    "OPTIONAL (from iteration_4, still open): migrate shadow* -> boxShadow to silence the RN Web deprecation warnings (case/[id].tsx fab styles at lines 986-990)."
+  ],
+  "critical_code_review_comments": [
+    "case/[id].tsx segment now uses flexDirection:'row' with each segmentBtn flex:1 (lines 928-946) — this guarantees all 5 tabs share width and stay within the container, which is exactly what the user requested. Confirmed at runtime: 5 x 70px buttons fit in the 390px viewport.",
+    "Header title fallback chain (line 429): `data.deceased_name?.trim() || data.case_number || data.name` is correct and produces the expected UX: name-first, then PRV number, then internal name.",
+    "Subtitle rendering (lines 437-439) only shows PRV number when BOTH case_number AND deceased_name.trim() exist — good, avoids duplicating the case number when it's already the title.",
+    "The 'Archivado' badge and PRV subtitle are mutually exclusive in the ternary (line 431 vs 437) — currently an archived case with a deceased name will NOT show the PRV subtitle, only the badge. Minor UX consideration; not part of this review."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (frontend-only request)", "frontend": "100% (4/4 scenarios: create-with-name header + tabs, tab switching for all 5 tabs, create-without-name fallback header + tabs)" },
+  "seed_data_creation": "Two test cases were created via the UI during testing and were NOT deleted: 'TEST Deceased Juan Pérez' (PRV260806A0004, case_a4b0678e54a8) and an unnamed case (PRV260806A0005, case_0dad8c72a3c6). Both live under user_id 'local_user'. Main agent can clean them via the trash-icon in each case's header if desired.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Case-detail tab bar (segmented control) now uses a single fixed row: styles.segment is flexDirection:'row', each styles.segmentBtn has flex:1. 5 tab testIDs: tab-calc, tab-notes, tab-logbook, tab-docs, tab-report. Header title reads deceased_name || case_number || name; subtitle PRV number appears only when both name and case_number exist. All flows verified at 390x844 mobile viewport on EXPO_PUBLIC_BACKEND_URL=https://preservia-cases.preview.emergentagent.com."
+}

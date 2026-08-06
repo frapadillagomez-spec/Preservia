@@ -426,7 +426,7 @@ export default function CaseDetail() {
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {data.name}
+            {data.deceased_name?.trim() || data.case_number || data.name}
           </Text>
           {data.status === "archived" ? (
             <View style={styles.archivedBadge}>
@@ -434,7 +434,7 @@ export default function CaseDetail() {
               <Text style={styles.archivedText}>Archivado</Text>
             </View>
           ) : (
-            !!data.case_number && (
+            !!data.case_number && !!data.deceased_name?.trim() && (
               <Text style={styles.headerSub}>{data.case_number}</Text>
             )
           )}
@@ -460,12 +460,7 @@ export default function CaseDetail() {
       </View>
 
       {/* Segmented control */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.segmentScroll}
-        contentContainerStyle={styles.segment}
-      >
+      <View style={styles.segment}>
         {([
           { key: "calc", label: "Cálculos" },
           { key: "notes", label: "Notas" },
@@ -482,10 +477,15 @@ export default function CaseDetail() {
             }}
             style={[styles.segmentBtn, tab === s.key && styles.segmentActive]}
           >
-            <Text style={[styles.segmentText, tab === s.key && styles.segmentTextActive]}>{s.label}</Text>
+            <Text
+              numberOfLines={1}
+              style={[styles.segmentText, tab === s.key && styles.segmentTextActive]}
+            >
+              {s.label}
+            </Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
 
       {/* Content */}
       {tab === "calc" && (
@@ -925,7 +925,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   archivedText: { color: colors.onSurfaceTertiary, fontFamily: font.medium, fontSize: fontSize.sm },
-  segmentScroll: { flexGrow: 0, maxHeight: 52 },
   segment: {
     flexDirection: "row",
     backgroundColor: colors.surfaceSecondary,
@@ -936,9 +935,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  segmentBtn: { alignItems: "center", paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.lg, borderRadius: radius.sm },
+  segmentBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 40,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: 2,
+    borderRadius: radius.sm,
+  },
   segmentActive: { backgroundColor: colors.surfaceInverse },
-  segmentText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base },
+  segmentText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
   segmentTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: 120 },
   docsIntro: { color: colors.onSurfaceSecondary, fontFamily: font.regular, fontSize: fontSize.base, lineHeight: 21, marginBottom: spacing.lg },
