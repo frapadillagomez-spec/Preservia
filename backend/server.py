@@ -66,7 +66,7 @@ class GoogleInput(BaseModel):
 
 
 class CaseInput(BaseModel):
-    name: str
+    name: Optional[str] = ""
     case_ref: Optional[str] = ""
     deceased_name: Optional[str] = ""
     date: Optional[str] = None
@@ -539,11 +539,12 @@ async def list_cases(user: Dict[str, Any] = Depends(get_current_user)):
 async def create_case(data: CaseInput, user: Dict[str, Any] = Depends(get_current_user)):
     case_id = f"case_{uuid.uuid4().hex[:12]}"
     created = now_iso()
+    case_number = await next_case_number()
     doc = {
         "case_id": case_id,
-        "case_number": await next_case_number(),
+        "case_number": case_number,
         "user_id": user["user_id"],
-        "name": data.name,
+        "name": data.name.strip() if (data.name or "").strip() else case_number,
         "case_ref": data.case_ref or "",
         "deceased_name": data.deceased_name or "",
         "sex": data.sex or "",
@@ -628,7 +629,6 @@ async def update_case(case_id: str, data: CaseInput, user: Dict[str, Any] = Depe
     await db.cases.update_one(
         {"case_id": case_id},
         {"$set": {
-            "name": data.name,
             "case_ref": data.case_ref or "",
             "deceased_name": data.deceased_name or "",
             "sex": data.sex or "",
@@ -954,7 +954,6 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     dur = embalming_duration_text(case.get("embalming_start"), case.get("embalming_end"))
     info_rows = [
         [Paragraph("N.º de caso", cell_label), Paragraph(esc(case.get("case_number") or "-"), cell_val)],
-        [Paragraph("Caso", cell_label), Paragraph(esc(case.get("name", "-")), cell_val)],
         [Paragraph("ID / Referencia", cell_label), Paragraph(esc(case.get("case_ref") or "-"), cell_val)],
         [Paragraph("Fallecido", cell_label), Paragraph(esc(case.get("deceased_name") or "-"), cell_val)],
         [Paragraph("Sexo", cell_label), Paragraph(esc(sex_lbl.get(case.get("sex"), "-")), cell_val)],

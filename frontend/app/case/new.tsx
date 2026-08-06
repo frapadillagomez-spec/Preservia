@@ -94,12 +94,7 @@ export default function NewCase() {
   };
 
   const submit = async () => {
-    if (!name.trim()) {
-      toast.show("El nombre del caso es obligatorio", "error");
-      return;
-    }
     const payload = {
-      name: name.trim(),
       case_ref: caseRef.trim(),
       deceased_name: deceased.trim(),
       sex,
@@ -136,27 +131,19 @@ export default function NewCase() {
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {!!caseNumber && (
+          {!isEdit && (
             <View style={styles.numberCard}>
               <Ionicons name="barcode-outline" size={18} color={colors.onSurfaceSecondary} />
-              <Text style={styles.numberText}>N.º de caso: {caseNumber}</Text>
+              <Text style={styles.numberText}>El N.º de caso se generará automáticamente</Text>
             </View>
           )}
           {!isEdit && (
             <Text style={styles.hint}>
-              Se generará un número de caso único con año, mes y día. La fecha de embalsamamiento coincide con la
-              apertura del caso.
+              Se asignará un número de caso único (estilo lote) con año, mes y día. La fecha de embalsamamiento
+              coincide con la apertura del caso.
             </Text>
           )}
 
-          <Field
-            testID="case-name-input"
-            label="Nombre del caso *"
-            icon="briefcase-outline"
-            value={name}
-            onChangeText={setName}
-            placeholder="Ej. Caso 2026-042"
-          />
           <Field
             testID="case-ref-input"
             label="ID / Referencia"
