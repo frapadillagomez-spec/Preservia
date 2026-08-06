@@ -1,0 +1,36 @@
+{
+  "summary": "Full end-to-end verification of the new 'Hoja del caso' feature. Backend: 6/6 pytest tests pass in /app/backend/tests/test_case_sheet.py — PUT /api/cases/{id}/sheet stores the case_sheet object; GET /api/cases/{id} returns the same case_sheet with all fields (arrays, single-select string, multi-select arrays, text/numbers) preserved; report PDF (GET /api/cases/{id}/report) is a valid %PDF, grows in size vs baseline once a sheet is attached, and its extracted text contains the 'Analisis del caso' section header plus sheet values ('Funeraria Test', '1024', 'Sala A'); PUT with unknown case_id returns 404; PUT with partial sheet replaces (not merges), matching backend $set semantics. Frontend (mobile 390x844, Expo web): created case with deceased 'TEST Sheet Deceased Juan' -> Reporte tab -> tapped case-sheet-button -> /case/sheet?caseId=... loads with nombre_difunto preloaded ('TEST Sheet Deceased Juan') and fecha_ingreso auto-filled ('2026-08-06'). Filled s-funeraria='Funeraria E2E', s-no_servicio='9911', s-responsable_funeraria='Resp E2E'; toggled chip-tipo_caso-normal, chip-complexion-mediana, chip-signos-ictericia, chip-servicio-normal (bg turned rgb(15,23,42) = surfaceInverse, confirmed active). Tapped sheet-save-button -> toast 'Hoja del caso guardada' appeared and router.back() returned to the case detail Reporte tab. Reopened Hoja del caso: funeraria and no_servicio persisted correctly and the four toggled chips remained active (server-persisted state overrides preload as designed). No red-screen errors. Only pre-existing non-blocking RN Web warnings (shadow*, props.pointerEvents) already tracked in iterations 4-5.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "StyleSheet shadow* props", "issue": "Pre-existing (iter 4/5) RN Web deprecation warning: 'shadow*' style props are deprecated. Use 'boxShadow'. Non-blocking. Not caused by /app/frontend/app/case/sheet.tsx."},
+      {"component": "props.pointerEvents", "issue": "Pre-existing (iter 4/5) RN Web deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_case_sheet.py",
+    "/app/test_reports/pytest/case_sheet.xml"
+  ],
+  "action_items": [
+    "No action required — feature works end-to-end (backend persistence + PDF section + frontend preload/save/persist).",
+    "OPTIONAL (unrelated to this feature): keep migrating shadow* to boxShadow to silence RN Web warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py:646-657 PUT /api/cases/{case_id}/sheet uses $set on case_sheet — semantics are REPLACE, not MERGE. Confirmed by test_put_case_sheet_partial_update. The frontend always sends the full sheet object (built from EMPTY + load merge in sheet.tsx:148), so this is fine, but if a future caller sends a partial payload it will erase other fields. Consider documenting this or using dot-path $set per key.",
+    "server.py:647 accepts any dict as 'sheet' with no schema validation — acceptable for now given the flexible form, but a Pydantic model with typed sections would prevent typos silently persisting.",
+    "sheet.tsx:224 single-select 'complexion' handled correctly (tapping the active chip clears it) but relies on the array-shaped `selected={sheet.complexion ? [sheet.complexion] : []}` prop; multi-select groups store arrays as documented in the request. Verified at runtime.",
+    "sheet.tsx:181 router.back() after save assumes there is a screen to go back to; if the user deep-links to /case/sheet?caseId=... directly the back() will exit the stack. Minor edge case.",
+    "server.py:1030 PDF sheet section is only added when `any(bool(v) for v in sheet.values())` — an all-empty sheet is skipped, which is desirable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_case_sheet.py (new pytest file with 6 tests)"
+  ],
+  "success_rate": { "backend": "100% (6/6 tests in test_case_sheet.py + no regressions)", "frontend": "100% (open sheet + preload + fill + chips + save + toast + reopen persistence)" },
+  "seed_data_creation": "Created case case_1c94c2c7dbc0 (PRV260806A0009, 'TEST Sheet Deceased Juan') and deleted it at end of frontend test via DELETE /api/cases/case_1c94c2c7dbc0 -> {ok:true}. Backend pytest also creates+deletes its own case in the fixture teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Feature 'Hoja del caso' is complete. Route: /case/sheet?caseId=<id> (sheet.tsx). Backend: PUT /api/cases/{id}/sheet, GET /api/cases/{id} returns case_sheet, GET /api/cases/{id}/report includes 'Analisis del caso - Embalsamamiento' section when sheet has any truthy value. Single-select 'complexion' stored as string; multi-select groups stored as arrays. Save uses $set (replace, not merge). Frontend testIDs: case-sheet-button, sheet-close, sheet-save-button, s-<field> (text/small/multi inputs), chip-<group>-<key> where groups are tipo_caso/complexion/sello/signos/carac/equipo/servicio."
+}

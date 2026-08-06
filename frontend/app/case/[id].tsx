@@ -708,6 +708,14 @@ export default function CaseDetail() {
               style={{ marginTop: spacing.lg, alignSelf: "stretch" }}
             />
             <Button
+              testID="case-sheet-button"
+              label="Hoja del caso"
+              icon="clipboard-outline"
+              variant="outline"
+              onPress={() => router.push(`/case/sheet?caseId=${id}`)}
+              style={{ marginTop: spacing.md, alignSelf: "stretch" }}
+            />
+            <Button
               testID="export-data-button"
               label={Platform.OS === "web" ? "Descargar datos (JSON)" : "Exportar datos (JSON)"}
               icon="code-download-outline"

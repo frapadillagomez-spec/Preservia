@@ -643,6 +643,20 @@ async def update_case(case_id: str, data: CaseInput, user: Dict[str, Any] = Depe
     return {"case": updated}
 
 
+@api_router.put("/cases/{case_id}/sheet")
+async def save_case_sheet(case_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    sheet = payload.get("sheet") if isinstance(payload.get("sheet"), dict) else payload
+    await db.cases.update_one(
+        {"case_id": case_id},
+        {"$set": {"case_sheet": sheet, "updated_at": now_iso()}},
+    )
+    updated = await db.cases.find_one({"case_id": case_id}, {"_id": 0})
+    return {"case": updated}
+
+
 @api_router.patch("/cases/{case_id}/status")
 async def set_case_status(case_id: str, data: StatusInput, user: Dict[str, Any] = Depends(get_current_user)):
     if data.status not in ("active", "archived"):
@@ -896,6 +910,43 @@ METHOD_LABELS = {
     "average": "Promedio (3 metodos)",
 }
 
+# ---- Hoja del caso (análisis) label maps ----
+SHEET_TIPO_CASO = {"necropsiado": "Necropsiado", "normal": "Normal", "estudio_clinico": "Estudio clínico"}
+SHEET_COMPLEXION = {
+    "normal": "Normal", "emaciada": "Emaciada", "delgada": "Delgada",
+    "mediana": "Mediana", "robusta": "Robusta", "obesa": "Obesa",
+}
+SHEET_SELLO = {"barba": "Barba", "bigote": "Bigote"}
+SHEET_SIGNOS = {
+    "amoratamiento_rostro": "Amoratamiento en el rostro",
+    "amoratamiento_declives": "Amoratamiento en zonas declives",
+    "inflamacion_abdominal": "Inflamación abdominal",
+    "fluidos_orificios": "Segregación de fluidos por orificios naturales",
+    "fluidos_suturas": "Segregación de fluidos por suturas",
+    "gases_ofensivos": "Cuadro de gases ofensivos",
+    "retencion_liquidos": "Retención de líquidos",
+    "gas_tejido": "Gas en tejido",
+    "ictericia": "Ictericia",
+}
+SHEET_CARAC = {
+    "amputacion": "Amputación", "cicatriz": "Cicatriz", "traumas": "Traumas",
+    "ulceras": "Úlceras de decúbito", "tumor": "Tumor",
+    "desprendimiento_piel": "Desprendimiento de piel", "refrigerado": "Refrigerado",
+}
+SHEET_EQUIPO = {
+    "cateter_dialisis": "Catéter de diálisis", "marcapasos": "Marcapasos",
+    "grapas": "Grapas quirúrgicas", "osteosintesis": "Material de osteosíntesis",
+    "respiratorio": "Material respiratorio", "sonda_urinaria": "Sonda urinaria",
+    "traqueotomia": "Traqueotomía",
+}
+SHEET_SERVICIO = {
+    "normal": "Embalsamamiento normal", "especial": "Embalsamamiento especial",
+    "largo_plazo": "Embalsamamiento a largo plazo", "reconstruccion": "Reconstrucción",
+    "auxilio_estetico": "Auxilio estético", "custodia": "Custodia y refrigeración",
+    "ninguno": "Ningún servicio",
+}
+
+
 
 def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any],
               attachments: Optional[List[Dict[str, Any]]] = None) -> bytes:
@@ -973,6 +1024,64 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
     ]))
     elems.append(t)
+
+    # ---- Hoja del caso (análisis del caso) ----
+    sheet = case.get("case_sheet") or {}
+    if isinstance(sheet, dict) and any(bool(v) for v in sheet.values()):
+        def sel(vals, mapping, otro=""):
+            parts = [mapping.get(v, v) for v in (vals or [])]
+            if otro and str(otro).strip():
+                parts.append(f"Otro: {otro}")
+            return ", ".join([p for p in parts if p])
+
+        elems.append(Paragraph("Analisis del caso - Embalsamamiento", h2))
+        srows: List[Any] = []
+
+        def addrow(lbl: str, val: Any):
+            if val is not None and str(val).strip():
+                srows.append([Paragraph(esc(lbl), cell_label), Paragraph(esc(val).replace("\n", "<br/>"), cell_val)])
+
+        addrow("Fecha de ingreso", sheet.get("fecha_ingreso"))
+        addrow("No. de servicio", sheet.get("no_servicio"))
+        addrow("Nombre del difunto", sheet.get("nombre_difunto"))
+        addrow("Funeraria", sheet.get("funeraria"))
+        addrow("Responsable de la funeraria", sheet.get("responsable_funeraria"))
+        addrow("Ingreso a sala de emb.", sheet.get("ingreso_sala"))
+        addrow("Inicio del emb.", sheet.get("inicio_emb"))
+        addrow("Termino del emb.", sheet.get("termino_emb"))
+        addrow("Tipo de caso", sel(sheet.get("tipo_caso"), SHEET_TIPO_CASO, sheet.get("tipo_caso_otro", "")))
+        addrow("Complexion", SHEET_COMPLEXION.get(sheet.get("complexion"), sheet.get("complexion") or ""))
+        addrow("Uso de sello facial", sel(sheet.get("sello_facial"), SHEET_SELLO, sheet.get("sello_facial_otro", "")))
+        addrow("Signos de descomposicion", sel(sheet.get("signos"), SHEET_SIGNOS, sheet.get("signos_otros", "")))
+        addrow("Caracteristicas", sel(sheet.get("caracteristicas"), SHEET_CARAC))
+        addrow("Lesiones", sheet.get("caracteristicas_lesiones"))
+        addrow("Otras caracteristicas", sheet.get("caracteristicas_otros"))
+        addrow("Equipo medico", sel(sheet.get("equipo_medico"), SHEET_EQUIPO, sheet.get("equipo_medico_otros", "")))
+        addrow("Altura", sheet.get("altura"))
+        addrow("Ancho", sheet.get("ancho"))
+        addrow("Peso", sheet.get("peso"))
+        addrow("Tipo de servicio realizado", sel(sheet.get("tipo_servicio"), SHEET_SERVICIO))
+        addrow("Posibles reacciones", sheet.get("reacciones"))
+        addrow("Sugerencias y comentarios", sheet.get("sugerencias"))
+        addrow("Sala de velacion", sheet.get("sala_velacion"))
+        addrow("Domicilio", sheet.get("domicilio"))
+        addrow("Otro lugar", sheet.get("otro_lugar"))
+        addrow("Fecha de egreso", sheet.get("fecha_egreso"))
+        addrow("Hora de egreso", sheet.get("hora_egreso"))
+        addrow("Responsable de la entrega", sheet.get("responsable_entrega"))
+        addrow("Titular o responsable", sheet.get("titular_responsable"))
+        addrow("Tecnico responsable del servicio", sheet.get("tecnico_responsable"))
+        addrow("Gerente de turno", sheet.get("gerente_turno"))
+
+        if srows:
+            st = Table(srows, colWidths=[55 * mm, 110 * mm])
+            st.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+            ]))
+            elems.append(st)
 
     elems.append(Paragraph("Calculos tecnicos", h2))
     calcs = case.get("calculations", [])
