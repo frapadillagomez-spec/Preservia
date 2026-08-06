@@ -223,6 +223,25 @@ export default function CaseDetail() {
       </View>
 
       {/* Segmented control */}
+
+      {/* Hoja de Análisis de Caso button */}
+      <Pressable
+        testID="open-hoja-caso"
+        style={({ pressed }) => [styles.hojaTile, pressed && { opacity: 0.9 }]}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          router.push(`/case/hoja?caseId=${id}&deceasedName=${encodeURIComponent(data.deceased_name || data.name)}&caseDate=${encodeURIComponent(data.date || "")}`);
+        }}
+      >
+        <View style={styles.hojaIcon}>
+          <Ionicons name="document-text-outline" size={22} color={colors.onSurfaceInverse} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.hojaTitle}>Hoja de Análisis de Caso</Text>
+          <Text style={styles.hojaSub}>Formulario de embalsamamiento</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
+      </Pressable>
       <View style={styles.segment}>
         {([
           { key: "calc", label: "Cálculos" },
@@ -581,4 +600,26 @@ const styles = StyleSheet.create({
   },
   summaryNum: { color: colors.onSurface, fontFamily: font.monoSemibold, fontSize: fontSize.xxl },
   summaryLabel: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2 },
+  hojaTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  hojaIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandPrimary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  hojaTitle: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg },
+  hojaSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2 },
 });

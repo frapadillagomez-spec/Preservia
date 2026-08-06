@@ -51,6 +51,7 @@ export default function RootLayout() {
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="case/new" options={{ presentation: "modal" }} />
                   <Stack.Screen name="case/[id]" />
+                  <Stack.Screen name="case/hoja" />
                   <Stack.Screen name="library/[id]" />
                   <Stack.Screen name="calculator/[type]" options={{ presentation: "modal" }} />
                   <Stack.Screen name="calculator/wizard" options={{ presentation: "modal" }} />

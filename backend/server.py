@@ -792,3 +792,266 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     client.close()
+
+
+# ----------------------------- Hoja del Caso (Embalming Case Sheet) -----------------------------
+class HojaCasoInput(BaseModel):
+    # 1. Información general
+    fecha_ingreso: Optional[str] = ""
+    nombre_difunto: Optional[str] = ""
+    funeraria: Optional[str] = ""
+    responsable_funeraria: Optional[str] = ""
+    no_servicio: Optional[str] = ""
+    # 2. Tiempos
+    ingreso_sala: Optional[str] = ""
+    inicio_embalsamamiento: Optional[str] = ""
+    termino_embalsamamiento: Optional[str] = ""
+    # 3. Complexión
+    complexion: List[str] = Field(default_factory=list)
+    # 4. Vello facial
+    vello_facial: List[str] = Field(default_factory=list)
+    vello_facial_otro: Optional[str] = ""
+    # 5. Signos de descomposición
+    signos_descomposicion: List[str] = Field(default_factory=list)
+    signos_descomposicion_otros: Optional[str] = ""
+    # 6. Características del cuerpo
+    caracteristicas_cuerpo: List[str] = Field(default_factory=list)
+    caracteristicas_lesiones: Optional[str] = ""
+    caracteristicas_otros: Optional[str] = ""
+    # 7. Medidas
+    altura: Optional[float] = None
+    ancho: Optional[float] = None
+    peso: Optional[float] = None
+    # 8. Equipo médico
+    equipo_medico: List[str] = Field(default_factory=list)
+    equipo_medico_otros: Optional[str] = ""
+    # 9. Tipo de servicio
+    tipo_servicio: List[str] = Field(default_factory=list)
+    # 10. Comentarios
+    posibles_reacciones: Optional[str] = ""
+    sugerencias_embalsamador: Optional[str] = ""
+    # 11. Entrega
+    entrega_lugar: Optional[str] = ""
+    entrega_sala_velacion: Optional[str] = ""
+    entrega_domicilio: Optional[str] = ""
+    entrega_otro_lugar: Optional[str] = ""
+    fecha_egreso: Optional[str] = ""
+    hora_egreso: Optional[str] = ""
+    responsable_entrega: Optional[str] = ""
+    titular_responsable: Optional[str] = ""
+    tecnico_responsable: Optional[str] = ""
+    gerente_turno: Optional[str] = ""
+
+
+@api_router.post("/cases/{case_id}/hoja")
+async def save_hoja_caso(case_id: str, data: HojaCasoInput, user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    hoja_data = data.dict()
+    hoja_data["updated_at"] = now_iso()
+    await db.hojas_caso.update_one(
+        {"case_id": case_id},
+        {"$set": {**hoja_data, "case_id": case_id, "user_id": user["user_id"]}},
+        upsert=True,
+    )
+    await db.cases.update_one({"case_id": case_id}, {"$set": {"updated_at": now_iso()}})
+    return {"ok": True, "message": "Hoja del caso guardada"}
+
+
+@api_router.get("/cases/{case_id}/hoja")
+async def get_hoja_caso(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    hoja = await db.hojas_caso.find_one({"case_id": case_id}, {"_id": 0})
+    return {"hoja": hoja}
+
+
+def build_hoja_pdf(case: Dict[str, Any], hoja: Dict[str, Any], user: Dict[str, Any]) -> bytes:
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=15 * mm, rightMargin=15 * mm, topMargin=18 * mm, bottomMargin=15 * mm,
+    )
+    styles = getSampleStyleSheet()
+    slate = colors.HexColor("#334155")
+    slate_light = colors.HexColor("#64748B")
+    ink = colors.HexColor("#0F172A")
+    border_color = colors.HexColor("#CBD5E1")
+
+    title_style = ParagraphStyle("HTitle", parent=styles["Title"], textColor=ink, fontSize=18, spaceAfter=2)
+    subtitle_style = ParagraphStyle("HSub", parent=styles["Normal"], textColor=slate_light, fontSize=9, spaceAfter=12)
+    h2_style = ParagraphStyle("HH2", parent=styles["Heading2"], textColor=slate, fontSize=11, spaceBefore=12, spaceAfter=4)
+    body_style = ParagraphStyle("HBody", parent=styles["Normal"], textColor=ink, fontSize=9, leading=13)
+    small_style = ParagraphStyle("HSmall", parent=styles["Normal"], textColor=slate_light, fontSize=8)
+
+    def fmt_val(v):
+        if v is None or v == "":
+            return "-"
+        if isinstance(v, list):
+            return ", ".join(v) if v else "-"
+        return str(v)
+
+    elems: List[Any] = []
+    elems.append(Paragraph("PRESERVIA - HOJA DEL CASO", title_style))
+    elems.append(Paragraph("Formulario de embalsamamiento", subtitle_style))
+
+    # 1. Información general
+    elems.append(Paragraph("1. Información General", h2_style))
+    info_rows = [
+        ["Fecha de ingreso", fmt_val(hoja.get("fecha_ingreso"))],
+        ["Nombre del difunto", fmt_val(hoja.get("nombre_difunto"))],
+        ["Funeraria", fmt_val(hoja.get("funeraria"))],
+        ["Responsable funeraria", fmt_val(hoja.get("responsable_funeraria"))],
+        ["No. de servicio", fmt_val(hoja.get("no_servicio"))],
+    ]
+    t = Table(info_rows, colWidths=[45 * mm, 125 * mm])
+    t.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), slate_light),
+        ("TEXTCOLOR", (1, 0), (1, -1), ink),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.3, border_color),
+    ]))
+    elems.append(t)
+
+    # 2. Tiempos
+    elems.append(Paragraph("2. Tiempos", h2_style))
+    time_rows = [
+        ["Ingreso a sala", fmt_val(hoja.get("ingreso_sala"))],
+        ["Inicio embalsamamiento", fmt_val(hoja.get("inicio_embalsamamiento"))],
+        ["Término embalsamamiento", fmt_val(hoja.get("termino_embalsamamiento"))],
+    ]
+    t = Table(time_rows, colWidths=[45 * mm, 125 * mm])
+    t.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), slate_light),
+        ("TEXTCOLOR", (1, 0), (1, -1), ink),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.3, border_color),
+    ]))
+    elems.append(t)
+
+    # 3. Complexión
+    elems.append(Paragraph("3. Complexión", h2_style))
+    elems.append(Paragraph(fmt_val(hoja.get("complexion")), body_style))
+
+    # 4. Vello facial
+    elems.append(Paragraph("4. Vello Facial", h2_style))
+    vello = fmt_val(hoja.get("vello_facial"))
+    if hoja.get("vello_facial_otro"):
+        vello += f" | Otro: {hoja['vello_facial_otro']}"
+    elems.append(Paragraph(vello, body_style))
+
+    # 5. Signos de descomposición
+    elems.append(Paragraph("5. Signos de Descomposición", h2_style))
+    signos = fmt_val(hoja.get("signos_descomposicion"))
+    if hoja.get("signos_descomposicion_otros"):
+        signos += f" | Otros: {hoja['signos_descomposicion_otros']}"
+    elems.append(Paragraph(signos, body_style))
+
+    # 6. Características del cuerpo
+    elems.append(Paragraph("6. Características del Cuerpo", h2_style))
+    caract = fmt_val(hoja.get("caracteristicas_cuerpo"))
+    if hoja.get("caracteristicas_lesiones"):
+        caract += f" | Lesiones: {hoja['caracteristicas_lesiones']}"
+    if hoja.get("caracteristicas_otros"):
+        caract += f" | Otros: {hoja['caracteristicas_otros']}"
+    elems.append(Paragraph(caract, body_style))
+
+    # 7. Medidas
+    elems.append(Paragraph("7. Medidas", h2_style))
+    medidas_rows = [
+        ["Altura (cm)", fmt_val(hoja.get("altura"))],
+        ["Ancho (cm)", fmt_val(hoja.get("ancho"))],
+        ["Peso (kg)", fmt_val(hoja.get("peso"))],
+    ]
+    t = Table(medidas_rows, colWidths=[45 * mm, 125 * mm])
+    t.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), slate_light),
+        ("TEXTCOLOR", (1, 0), (1, -1), ink),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.3, border_color),
+    ]))
+    elems.append(t)
+
+    # 8. Equipo médico
+    elems.append(Paragraph("8. Equipo Médico", h2_style))
+    equipo = fmt_val(hoja.get("equipo_medico"))
+    if hoja.get("equipo_medico_otros"):
+        equipo += f" | Otros: {hoja['equipo_medico_otros']}"
+    elems.append(Paragraph(equipo, body_style))
+
+    # 9. Tipo de servicio
+    elems.append(Paragraph("9. Tipo de Servicio", h2_style))
+    elems.append(Paragraph(fmt_val(hoja.get("tipo_servicio")), body_style))
+
+    # 10. Comentarios
+    elems.append(Paragraph("10. Comentarios", h2_style))
+    com_rows = [
+        ["Posibles reacciones", fmt_val(hoja.get("posibles_reacciones"))],
+        ["Sugerencias embalsamador", fmt_val(hoja.get("sugerencias_embalsamador"))],
+    ]
+    t = Table(com_rows, colWidths=[45 * mm, 125 * mm])
+    t.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), slate_light),
+        ("TEXTCOLOR", (1, 0), (1, -1), ink),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.3, border_color),
+    ]))
+    elems.append(t)
+
+    # 11. Entrega
+    elems.append(Paragraph("11. Entrega", h2_style))
+    entrega_rows = [
+        ["Lugar", fmt_val(hoja.get("entrega_lugar"))],
+        ["Sala de velación", fmt_val(hoja.get("entrega_sala_velacion"))],
+        ["Domicilio", fmt_val(hoja.get("entrega_domicilio"))],
+        ["Otro lugar", fmt_val(hoja.get("entrega_otro_lugar"))],
+        ["Fecha de egreso", fmt_val(hoja.get("fecha_egreso"))],
+        ["Hora de egreso", fmt_val(hoja.get("hora_egreso"))],
+        ["Responsable entrega", fmt_val(hoja.get("responsable_entrega"))],
+        ["Titular/responsable", fmt_val(hoja.get("titular_responsable"))],
+        ["Técnico responsable", fmt_val(hoja.get("tecnico_responsable"))],
+        ["Gerente de turno", fmt_val(hoja.get("gerente_turno"))],
+    ]
+    t = Table(entrega_rows, colWidths=[45 * mm, 125 * mm])
+    t.setStyle(TableStyle([
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TEXTCOLOR", (0, 0), (0, -1), slate_light),
+        ("TEXTCOLOR", (1, 0), (1, -1), ink),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.3, border_color),
+    ]))
+    elems.append(t)
+
+    elems.append(Spacer(1, 14))
+    elems.append(Paragraph(
+        f"Generado por Preservia | Profesional: {user.get('name', '')} ({user.get('email', '')}) | {now_iso()[:10]}",
+        small_style,
+    ))
+
+    doc.build(elems)
+    return buf.getvalue()
+
+
+@api_router.get("/cases/{case_id}/hoja/pdf")
+async def generate_hoja_pdf(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    hoja = await db.hojas_caso.find_one({"case_id": case_id}, {"_id": 0})
+    if not hoja:
+        raise HTTPException(status_code=404, detail="No hay hoja del caso guardada")
+    pdf_bytes = build_hoja_pdf(c, hoja, user)
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    safe = (c.get("name") or "hoja_caso").replace(" ", "_")[:40]
+    return {"filename": f"Hoja_Caso_{safe}.pdf", "pdf_base64": b64, "mime": "application/pdf"}
