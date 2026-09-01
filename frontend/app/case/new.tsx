@@ -16,24 +16,8 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { mxToISO, nowMxParts, splitMx } from "@/src/utils/mxtime";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function splitDT(iso?: string | null): [string, string] {
-  if (!iso) return ["", ""];
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return ["", ""];
-  return [
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  ];
-}
-
-function toISO(dateStr: string, timeStr: string): string | null {
-  if (!dateStr.trim()) return null;
-  const dt = new Date(`${dateStr.trim()}T${(timeStr.trim() || "00:00")}:00`);
-  return isNaN(dt.getTime()) ? null : dt.toISOString();
-}
 
 export default function NewCase() {
   const insets = useSafeAreaInsets();
@@ -63,12 +47,11 @@ export default function NewCase() {
       setDeceased(c.deceased_name || "");
       setSex(c.sex || "");
       setCaseNumber(c.case_number || "");
-      const [dd] = splitDT(c.date_of_death);
-      setDod(dd || (c.date_of_death ? String(c.date_of_death).slice(0, 10) : ""));
-      const [sd, st] = splitDT(c.embalming_start);
+      setDod(c.date_of_death ? String(c.date_of_death).slice(0, 10) : "");
+      const [sd, st] = splitMx(c.embalming_start);
       setStartDate(sd);
       setStartTime(st);
-      const [ed, et] = splitDT(c.embalming_end);
+      const [ed, et] = splitMx(c.embalming_end);
       setEndDate(ed);
       setEndTime(et);
     } catch {
@@ -81,9 +64,7 @@ export default function NewCase() {
   }, [load]);
 
   const setNow = (which: "start" | "end") => {
-    const d = new Date();
-    const ds = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const ts = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const [ds, ts] = nowMxParts();
     if (which === "start") {
       setStartDate(ds);
       setStartTime(ts);
@@ -99,8 +80,8 @@ export default function NewCase() {
       deceased_name: deceased.trim(),
       sex,
       date_of_death: dod.trim() ? dod.trim() : null,
-      embalming_start: toISO(startDate, startTime),
-      embalming_end: toISO(endDate, endTime),
+      embalming_start: mxToISO(startDate, startTime),
+      embalming_end: mxToISO(endDate, endTime),
     };
     setBusy(true);
     try {
@@ -201,7 +182,7 @@ export default function NewCase() {
           </View>
           <View style={styles.dtRow}>
             <View style={styles.dtCol}>
-              <Field testID="start-date" label="Fecha (AAAA-MM-DD)" value={startDate} onChangeText={setStartDate} placeholder="2026-06-02" />
+              <Field testID="start-date" label="Fecha (AAAA-MM-DD)" value={startDate} onChangeText={setStartDate} placeholder="2026-06-01" />
             </View>
             <View style={styles.dtColSm}>
               <Field testID="start-time" label="Hora (HH:MM)" value={startTime} onChangeText={setStartTime} placeholder="09:00" />
@@ -217,7 +198,7 @@ export default function NewCase() {
           </View>
           <View style={styles.dtRow}>
             <View style={styles.dtCol}>
-              <Field testID="end-date" label="Fecha (AAAA-MM-DD)" value={endDate} onChangeText={setEndDate} placeholder="2026-06-02" />
+              <Field testID="end-date" label="Fecha (AAAA-MM-DD)" value={endDate} onChangeText={setEndDate} placeholder="2026-06-01" />
             </View>
             <View style={styles.dtColSm}>
               <Field testID="end-time" label="Hora (HH:MM)" value={endTime} onChangeText={setEndTime} placeholder="11:30" />

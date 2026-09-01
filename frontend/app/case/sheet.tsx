@@ -17,6 +17,7 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { dateMx, timeMx } from "@/src/utils/mxtime";
 
 type Opt = { key: string; label: string };
 
@@ -116,20 +117,6 @@ const EMPTY: Sheet = {
   gerente_turno: "",
 };
 
-const pad = (n: number) => String(n).padStart(2, "0");
-function timeOf(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-function dateOf(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso).slice(0, 10);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 export default function CaseSheet() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -150,9 +137,9 @@ export default function CaseSheet() {
         setSheet({
           ...EMPTY,
           nombre_difunto: c.deceased_name || "",
-          fecha_ingreso: dateOf(c.embalming_date || c.date),
-          inicio_emb: timeOf(c.embalming_start),
-          termino_emb: timeOf(c.embalming_end),
+          fecha_ingreso: dateMx(c.embalming_date || c.date),
+          inicio_emb: timeMx(c.embalming_start),
+          termino_emb: timeMx(c.embalming_end),
         });
       }
     } catch {

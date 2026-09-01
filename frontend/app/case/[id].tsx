@@ -27,6 +27,7 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { fmtDateTimeMx } from "@/src/utils/mxtime";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
@@ -56,17 +57,7 @@ const ATT_LABELS = ["Certificado de Defunción", "Hoja de Autorización", "Etiqu
 type Tab = "calc" | "notes" | "logbook" | "docs" | "report";
 
 function fmtDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleString("es-ES", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
+  return fmtDateTimeMx(iso);
 }
 
 export default function CaseDetail() {

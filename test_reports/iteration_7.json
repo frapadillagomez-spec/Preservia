@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only verification of the Mexico-time (UTC-6) embalming date/time bug fix in the case create/edit form and report preview. Full round-trip works: entered start 2026-06-01 09:00 and end 2026-06-01 11:30 (Mexico wall-clock), saved, reopened for edit, and the fields reloaded with the SAME values (no 6h shift, no date roll to 2026-06-02). 'Ahora' buttons populated current Mexico wall-clock time (2026-09-01 11:31, matching UTC-6). Report PDF preview (Reporte tab -> preview-report-button) rendered successfully with Fecha de embalsamamiento 01/06/2026, Inicio 01/06/2026 09:00, Término 01/06/2026 11:30, Tiempo consumido 2 h 30 min, and Generado in MX time (01/09/2026 11:32). Test case was deleted via API.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "RN Web deprecation", "issue": "Console warns: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking, but should be cleaned up as react-native-web migrates. Reference: (styles across theme/components)"}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "None required for the MX-time fix; behavior matches the specification.",
+    "Optional: clean up RN-Web deprecation warnings (shadow*, pointerEvents) reported in console."
+  ],
+  "critical_code_review_comments": [
+    "src/utils/mxtime.ts is a clean, well-scoped helper using a fixed -06:00 offset (Mexico abolished DST in 2022) — appropriate approach.",
+    "app/case/new.tsx correctly uses splitMx on load and mxToISO on submit; there is no timezone leak."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "Created and then deleted TEST_MX_TIME_ROUNDTRIP case (case_f8f5d81d1ff8) via UI + API cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Preservia app is no-auth (local_user). To reach case screens: skip welcome via testID welcome-skip, tap new-case-fab on the home tab, and use case-edit on the case detail. The Reporte tab (tab-report) hosts preview-report-button. MX time helper is src/utils/mxtime.ts (fixed -06:00 offset).",
+  "rca_of_issue": "Previously the form stored the raw HH:MM string as if it were UTC, so 09:00 MX became 09:00Z which is 03:00 MX after re-display, and downstream date computations rolled by +1 day near midnight. Fix: mxToISO composes `YYYY-MM-DDTHH:MM:00-06:00` and stores the ISO UTC, while splitMx subtracts 6h from the stored UTC and reads getUTC* fields to recover the exact Mexico wall-clock. Verified end-to-end via UI round-trip and via the server-rendered PDF."
+}

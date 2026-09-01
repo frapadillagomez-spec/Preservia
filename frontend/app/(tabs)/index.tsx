@@ -21,6 +21,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { fmtDateMx } from "@/src/utils/mxtime";
 import { BrandBar } from "@/src/components/BrandLogo";
 
 const EMPTY_IMG =
@@ -39,11 +40,7 @@ type Case = {
 };
 
 function fmtDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
-  } catch {
-    return "";
-  }
+  return fmtDateMx(iso);
 }
 function initials(name: string) {
   return (name || "?").trim().slice(0, 2).toUpperCase();

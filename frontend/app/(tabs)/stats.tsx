@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { fmtDateMx } from "@/src/utils/mxtime";
 import { BrandBar } from "@/src/components/BrandLogo";
 
 type Totals = {
@@ -43,11 +44,7 @@ type Stats = {
 };
 
 function fmtDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
-  } catch {
-    return "";
-  }
+  return fmtDateMx(iso);
 }
 
 const CALC_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {

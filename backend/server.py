@@ -122,6 +122,10 @@ class CatalogInput(BaseModel):
 
 
 # ----------------------------- Helpers -----------------------------
+# Horario de México (UTC-6 fijo; México central no usa horario de verano desde 2022).
+MX_TZ = timezone(timedelta(hours=-6))
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -980,7 +984,10 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         if not iso:
             return "-"
         try:
-            return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M")
+            dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(MX_TZ).strftime("%d/%m/%Y %H:%M")
         except Exception:
             return iso
 
@@ -996,20 +1003,29 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     def fmt_dateonly(iso: Optional[str]) -> str:
         if not iso:
             return "-"
+        s = str(iso)
         try:
-            return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%d/%m/%Y")
+            # Fechas solo-día (AAAA-MM-DD) se muestran tal cual, sin conversión de zona.
+            if len(s) == 10 and "T" not in s:
+                return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(MX_TZ).strftime("%d/%m/%Y")
         except Exception:
-            return iso
+            return s
 
     sex_lbl = {"male": "Masculino", "female": "Femenino"}
     dur = embalming_duration_text(case.get("embalming_start"), case.get("embalming_end"))
+    # La fecha de embalsamamiento refleja el inicio real del procedimiento (o la apertura del caso si no se indicó).
+    emb_date_src = case.get("embalming_start") or case.get("embalming_date") or case.get("date")
     info_rows = [
         [Paragraph("N.º de caso", cell_label), Paragraph(esc(case.get("case_number") or "-"), cell_val)],
         [Paragraph("ID / Referencia", cell_label), Paragraph(esc(case.get("case_ref") or "-"), cell_val)],
         [Paragraph("Fallecido", cell_label), Paragraph(esc(case.get("deceased_name") or "-"), cell_val)],
         [Paragraph("Sexo", cell_label), Paragraph(esc(sex_lbl.get(case.get("sex"), "-")), cell_val)],
         [Paragraph("Fecha de fallecimiento", cell_label), Paragraph(esc(fmt_dateonly(case.get("date_of_death"))), cell_val)],
-        [Paragraph("Fecha de embalsamamiento", cell_label), Paragraph(esc(fmt_dateonly(case.get("embalming_date") or case.get("date"))), cell_val)],
+        [Paragraph("Fecha de embalsamamiento", cell_label), Paragraph(esc(fmt_dateonly(emb_date_src)), cell_val)],
         [Paragraph("Inicio de embalsamamiento", cell_label), Paragraph(esc(fmt_date(case.get("embalming_start"))), cell_val)],
         [Paragraph("Termino de embalsamamiento", cell_label), Paragraph(esc(fmt_date(case.get("embalming_end"))), cell_val)],
         [Paragraph("Tiempo consumido", cell_label), Paragraph(esc(dur or "-"), cell_val)],
