@@ -1198,7 +1198,7 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         addrow("Termino del emb.", sheet.get("termino_emb"))
         addrow("Tipo de caso", sel(sheet.get("tipo_caso"), SHEET_TIPO_CASO, sheet.get("tipo_caso_otro", "")))
         addrow("Complexion", SHEET_COMPLEXION.get(sheet.get("complexion"), sheet.get("complexion") or ""))
-        addrow("Uso de sello facial", sel(sheet.get("sello_facial"), SHEET_SELLO, sheet.get("sello_facial_otro", "")))
+        addrow("Vello facial", sel(sheet.get("sello_facial"), SHEET_SELLO, sheet.get("sello_facial_otro", "")))
         addrow("Signos de descomposicion", sel(sheet.get("signos"), SHEET_SIGNOS, sheet.get("signos_otros", "")))
         addrow("Caracteristicas", sel(sheet.get("caracteristicas"), SHEET_CARAC))
         addrow("Lesiones", sheet.get("caracteristicas_lesiones"))
