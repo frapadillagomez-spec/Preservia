@@ -16,7 +16,8 @@ import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
-import { FactorFPicker, CaseType } from "@/src/components/FactorFPicker";
+import { FactorFPicker, CaseType, isFactorFValid } from "@/src/components/FactorFPicker";
+import { F_MAX, F_MIN } from "@/src/data/factorF";
 
 const STEPS = ["Masa magra", "Dilución", "Volumen"];
 
@@ -99,8 +100,8 @@ export default function Wizard() {
   };
 
   const computeVolume = async () => {
-    if (caseType === "sheet" && isNaN(num(factorF))) {
-      toast.show("Ingresa un Factor F válido", "error");
+    if (caseType === "sheet" && !isFactorFValid(factorF)) {
+      toast.show(`El Factor F debe estar entre ${F_MIN} y ${F_MAX}`, "error");
       return;
     }
     setBusy3(true);
@@ -143,7 +144,8 @@ export default function Wizard() {
         },
       });
       toast.show("Cálculos guardados en el caso", "success");
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace(`/case/${caseId}`);
     } catch (e: any) {
       toast.show(e?.detail || "No se pudo guardar", "error");
     } finally {

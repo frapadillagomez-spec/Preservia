@@ -16,7 +16,7 @@ const WHATSAPP_URL = "https://wa.me/52" + WHATSAPP_NUMBER;
 const FAQ = [
   {
     q: "¿Mis casos son privados?",
-    a: "Sí. Cada profesional accede únicamente a sus propios casos, notas y documentos. Todo se respalda de forma segura en la nube y va ligado a tu cuenta.",
+    a: "Sí. La app no requiere registro ni inicio de sesión: abre directamente y tus casos, notas y documentos se respaldan de forma segura en el servidor de la app.",
   },
   {
     q: "¿Cómo genero un reporte PDF?",
@@ -37,8 +37,7 @@ const FAQ = [
 ];
 
 const STEPS = [
-  { icon: "log-in-outline", text: "Inicia sesión con tu correo o con Google." },
-  { icon: "add-circle-outline", text: "Crea un caso con su nombre y referencia." },
+  { icon: "add-circle-outline", text: "Crea un caso y llena la hoja del caso con la condición del cuerpo." },
   { icon: "calculator-outline", text: "Realiza cálculos y guárdalos en el caso." },
   { icon: "document-text-outline", text: "Agrega notas con texto y fotos." },
   { icon: "download-outline", text: "Genera el reporte PDF y compártelo." },

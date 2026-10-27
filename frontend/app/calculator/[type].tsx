@@ -16,7 +16,8 @@ import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
-import { FactorFPicker, CaseType } from "@/src/components/FactorFPicker";
+import { FactorFPicker, CaseType, isFactorFValid } from "@/src/components/FactorFPicker";
+import { F_MAX, F_MIN } from "@/src/data/factorF";
 
 type FieldDef = { key: string; label: string; placeholder: string };
 
@@ -132,6 +133,10 @@ export default function Calculator() {
   };
 
   const calculate = async () => {
+    if (cfg.hasCaseType && caseType === "sheet" && !isFactorFValid(factorF)) {
+      toast.show(`El Factor F debe estar entre ${F_MIN} y ${F_MAX}`, "error");
+      return;
+    }
     const inputs = buildInputs();
     if (!inputs) {
       toast.show("Completa todos los campos con números válidos", "error");

@@ -15,6 +15,11 @@ type Props = {
   sheetFactor: FactorF | null;
 };
 
+export const isFactorFValid = (t: string) => {
+  const f = parseFloat(t.replace(",", "."));
+  return !isNaN(f) && f >= F_MIN && f <= F_MAX;
+};
+
 /** Selector de tipo de caso con la opción "Factor F" sugerida por la hoja del caso. */
 export function FactorFPicker({ testPrefix, caseType, onCaseType, factorF, onFactorF, sheetFactor }: Props) {
   const opts: { key: CaseType; label: string }[] = [
@@ -52,6 +57,11 @@ export function FactorFPicker({ testPrefix, caseType, onCaseType, factorF, onFac
             keyboardType="decimal-pad"
             placeholder={sheetFactor.f.toFixed(3)}
           />
+          {factorF.trim() !== "" && !isFactorFValid(factorF) && (
+            <Text testID={`${testPrefix}-factor-warning`} style={styles.warning}>
+              El Factor F debe estar entre {F_MIN} y {F_MAX}.
+            </Text>
+          )}
         </View>
       )}
     </View>
@@ -81,5 +91,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.lg,
   },
+  warning: { color: colors.error, fontFamily: font.medium, fontSize: fontSize.sm, marginTop: -spacing.sm },
   cardText: { color: colors.onSurfaceSecondary, fontFamily: font.regular, fontSize: fontSize.sm, lineHeight: 18, marginBottom: spacing.sm },
 });
