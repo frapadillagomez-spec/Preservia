@@ -716,6 +716,8 @@ async def save_case_sheet(case_id: str, payload: Dict[str, Any], user: Dict[str,
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     sheet = payload.get("sheet") if isinstance(payload.get("sheet"), dict) else payload
+    sheet = dict(sheet)
+    sheet["firma_tecnico"] = clean_signature(sheet.get("firma_tecnico"))
     await db.cases.update_one(
         {"case_id": case_id},
         {"$set": {"case_sheet": sheet, "updated_at": now_iso()}},
@@ -1016,6 +1018,71 @@ SHEET_SERVICIO = {
 
 
 
+def clean_signature(sig: Any) -> Optional[Dict[str, Any]]:
+    """Valida la firma: solo trazos con puntos numéricos finitos [x, y]."""
+    import math
+    if not isinstance(sig, dict) or not isinstance(sig.get("strokes"), list):
+        return None
+
+    def num(v: Any) -> Optional[float]:
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
+
+    strokes = []
+    for s in sig["strokes"]:
+        if not isinstance(s, list):
+            continue
+        pts = []
+        for p in s:
+            if isinstance(p, (list, tuple)) and len(p) >= 2:
+                x, y = num(p[0]), num(p[1])
+                if x is not None and y is not None:
+                    pts.append([x, y])
+        if pts:
+            strokes.append(pts)
+    if not strokes:
+        return None
+    return {
+        "strokes": strokes,
+        "w": num(sig.get("w")) or 0,
+        "h": num(sig.get("h")) or 0,
+        "signed_at": str(sig.get("signed_at") or "")[:32],
+    }
+
+
+def signature_drawing(sig: Any, max_w: float = 75 * mm, max_h: float = 28 * mm):
+    """Convierte la firma capturada (trazos de puntos en px) en un dibujo vectorial."""
+    from reportlab.graphics.shapes import Drawing, PolyLine
+    sig = clean_signature(sig)
+    if not sig:
+        return None
+    try:
+        w = float(sig.get("w") or 0)
+        h = float(sig.get("h") or 0)
+        pts = [p for s in sig["strokes"] for p in s]
+        if not pts:
+            return None
+        if w <= 0 or h <= 0:
+            w = max(p[0] for p in pts) + 1
+            h = max(p[1] for p in pts) + 1
+        # Recorta al área realmente firmada para aprovechar el espacio.
+        minx, maxx = min(p[0] for p in pts), max(p[0] for p in pts)
+        miny, maxy = min(p[1] for p in pts), max(p[1] for p in pts)
+        bw, bh = max(maxx - minx, 1), max(maxy - miny, 1)
+        scale = min(max_w / bw, max_h / bh)
+        d = Drawing(bw * scale, bh * scale)
+        for s in sig["strokes"]:
+            flat: List[float] = []
+            for x, y in s:
+                flat += [(x - minx) * scale, (maxy - y) * scale]
+            if len(flat) == 2:
+                flat += [flat[0] + 0.5, flat[1]]
+            d.add(PolyLine(flat, strokeColor=colors.HexColor("#0F172A"), strokeWidth=1.4,
+                           strokeLineCap=1, strokeLineJoin=1))
+        return d
+    except Exception:
+        return None
+
+
 def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any],
               attachments: Optional[List[Dict[str, Any]]] = None) -> bytes:
     buf = BytesIO()
@@ -1173,6 +1240,20 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
                 ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
             ]))
             elems.append(st)
+
+        sig_draw = signature_drawing(sheet.get("firma_tecnico"))
+        if sig_draw is not None:
+            elems.append(Spacer(1, 6 * mm))
+            sig_tbl = Table([
+                [sig_draw],
+                [Paragraph(esc(sheet.get("tecnico_responsable") or "Tecnico responsable del servicio"), cell_val)],
+                [Paragraph(esc(f"Firma del tecnico responsable - {(clean_signature(sheet.get('firma_tecnico')) or {}).get('signed_at', '')}"), cell_label)],
+            ], colWidths=[80 * mm], hAlign="LEFT")
+            sig_tbl.setStyle(TableStyle([
+                ("LINEBELOW", (0, 0), (0, 0), 0.6, colors.HexColor("#0F172A")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            elems.append(sig_tbl)
 
     elems.append(Paragraph("Calculos tecnicos", h2))
     calcs = case.get("calculations", [])

@@ -52,7 +52,8 @@ export default function CaseSheet() {
     try {
       await api.put(`/cases/${caseId}/sheet`, { sheet });
       toast.show("Hoja del caso guardada", "success");
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace(`/case/${caseId}`);
     } catch (e: any) {
       toast.show(e?.detail || "No se pudo guardar la hoja", "error");
     } finally {

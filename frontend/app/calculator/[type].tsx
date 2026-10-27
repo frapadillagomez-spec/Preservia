@@ -160,7 +160,8 @@ export default function Calculator() {
     try {
       await api.post(`/cases/${caseId}/calculations`, { type, inputs });
       toast.show("Cálculo guardado en el caso", "success");
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace(`/case/${caseId}`);
     } catch (e: any) {
       toast.show(e?.detail || "No se pudo guardar", "error");
     } finally {

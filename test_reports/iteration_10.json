@@ -1,0 +1,40 @@
+{
+  "summary": "Tested the 'Firmas digitales' feature (técnico responsable signature) end to end at a 390x844 viewport, plus a regression check. Backend: the new tests/test_signature.py (21 tests) and the existing test_factor_f.py, test_case_sheet.py and test_no_auth_flow.py give 55 passed, 1 skipped. The skipped test is an edge case: a NaN/Infinity payload, see minor issue. firma_tecnico is saved by PUT /sheet and returned by GET /cases/{id} with its strokes, w, h and signed_at. The PDF from /report contains the technician name twice and 'Firma del tecnico responsable - <date>'. I rendered the PDF to an image: the vector signature is drawn above a line, with the name and date under it. No signature means no signature block. 16 malformed signature payloads still produce a valid PDF: strokes [] or 'garbage', a string, an int, null, a list, [[]], 3-value points, string points, dict points, w/h of 0, mixed types, 1e300 values, signed_at null, HTML in signed_at. Frontend /case/new: signature-open opens the modal with signature-pad (358x320). signature-save is disabled (aria-disabled=true) until a stroke is drawn. Mouse-drag strokes render as SVG paths (2 strokes gave 2 paths). signature-clear brings it back to 0 paths and disables save again. signature-close cancels: no preview is created and the pad is empty when reopened. After saving, signature-preview shows 'Firmado: YYYY-MM-DD HH:MM'. signature-remove brings back signature-open. signature-redo opens an empty pad. Creating a case with s-tecnico_responsable and a signature persisted 2 strokes, w=358, h=320. /case/sheet?caseId=: an existing signature is shown. Removing it and saving stores firma_tecnico=null; signing again and saving persists the new strokes. Edit mode (/case/new?id=) loads and keeps the signature. Regression: casetype-factor-warning appears for F=2.5, 0.5 and 'abc', and is hidden for 1.2 and '1,3'. Calcular is blocked while F is invalid; with F=1.093 the result is 14.59 L x1.093. No page errors. No deprecated Expo packages and no RN SafeAreaView imports.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/cases/{id}/sheet", "issue": "The sheet is saved raw, with no validation. A JSON body containing NaN/Infinity (e.g. firma_tecnico strokes [[[NaN,1],[2,Infinity]]]) is stored in Mongo, and then the response returns 500 'Out of range float values are not JSON compliant'. After that, GET /cases/{id} on that case would also return 500. build_pdf also crashes with 'ValueError: cannot convert float NaN to integer', because the error happens in doc.build, outside the try in signature_drawing. The app's UI never sends NaN, so this only matters for robustness. Fix: in signature_drawing, drop non-finite points (math.isfinite), and/or validate firma_tecnico with a Pydantic model."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CaseSheetForm signature-preview", "issues": [
+        "SignaturePreview uses the full pad as its viewBox (0 0 358 320) but is drawn in a 90px-tall box. The signature looks tiny, and the box has a lot of empty space. Crop the viewBox to the strokes' bounding box plus some padding, the same way the PDF does.",
+        "The signature-redo and signature-remove chips are about 36px tall, below the 44px minimum. Add hitSlop or minHeight 44."
+      ]},
+      {"screen": "/case/sheet and /case/new (edit)", "issues": ["After a save, router.back() runs even when there is no history, e.g. when the screen was opened by deep link. This shows the dev error 'The action GO_BACK was not handled'. Use router.canGoBack() ? router.back() : router.replace(...)."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_signature.py", "/app/test_reports/pytest/pytest_iter10.xml"],
+  "action_items": [
+    "(Low) Harden signature_drawing/build_pdf against NaN/Infinity point values (math.isfinite filter), and optionally validate firma_tecnico on PUT /sheet.",
+    "(Low) Crop SignaturePreview's viewBox to the strokes' bounding box so the preview is readable.",
+    "(Low) Make the signature-redo/remove chips at least 44px tall.",
+    "(Low) Guard router.back() with canGoBack() on the sheet and edit-case screens."
+  ],
+  "critical_code_review_comments": [
+    "The signature is not tied to the technician's name. If s-tecnico_responsable is changed after signing, the old signature and its signed_at stay. Consider clearing the signature or warning the user when the name changes (business decision).",
+    "signed_at comes from the device clock via nowMxParts, not from the server. A device with a wrong clock produces a wrong signing date.",
+    "server.py is 1590 lines, over the 700-line guideline, and should be split into modules (carried over from earlier iterations)."
+  ],
+  "updated_files": ["/app/backend/tests/test_signature.py"],
+  "success_rate": {"backend": "100% (55/55 passed, 1 edge test skipped: NaN payload causes 500)", "frontend": "100%"},
+  "seed_data_creation": "None kept. The test cases case_af40ac51b6c9 and case_cd405f50a7da (/tmp/sigcase) were deleted. The pytest fixture removes its TEST_Firma case.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "No-auth app; use welcome-skip. To draw a signature in Playwright: page.mouse.move/down/move(steps=4)/up inside the [data-testid=signature-pad] bounding box. Count paths with document.querySelectorAll('[data-testid=signature-pad] path'). signature-save exposes aria-disabled=true when the pad is empty. Run: pytest tests/test_signature.py tests/test_factor_f.py tests/test_case_sheet.py tests/test_no_auth_flow.py. The /var/log/supervisor/expo.err.log is stale (mentions SDK 54); package.json is expo ^58.",
+  "rca_of_issue": "NaN issue: save_case_sheet stores the payload dict as-is. Python's json accepts NaN/Infinity, so Mongo stores them, and Starlette's JSONResponse then refuses to serialize them (allow_nan=False). In signature_drawing, NaN makes scale and the Drawing size NaN; reportlab fails later, during doc.build, which is outside the try/except."
+}

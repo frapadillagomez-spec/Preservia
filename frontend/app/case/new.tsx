@@ -100,7 +100,8 @@ export default function NewCase() {
         await api.put(`/cases/${id}`, payload);
         await api.put(`/cases/${id}/sheet`, { sheet: fullSheet });
         toast.show("Caso actualizado", "success");
-        router.back();
+        if (router.canGoBack()) router.back();
+        else router.replace(`/case/${id}`);
       } else {
         const resp = await api.post("/cases", payload);
         await api.put(`/cases/${resp.case.case_id}/sheet`, { sheet: fullSheet });

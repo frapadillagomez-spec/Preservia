@@ -1,5 +1,7 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useState } from "react";
 import Ionicons from "@react-native-vector-icons/ionicons";
+import { Signature, SignatureModal, SignaturePreview } from "@/src/components/SignaturePad";
 
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BODY_CONDITIONS, computeFactorF } from "@/src/data/factorF";
@@ -196,6 +198,7 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
       <SectionLabel text="Responsables" />
       <TextField label="Titular o responsable" testID="s-titular_responsable" value={sheet.titular_responsable} onChangeText={(v) => set("titular_responsable", v)} placeholder="Nombre" />
       <TextField label="Técnico responsable del servicio" testID="s-tecnico_responsable" value={sheet.tecnico_responsable} onChangeText={(v) => set("tecnico_responsable", v)} placeholder="Nombre" />
+      <SignatureField sig={sheet.firma_tecnico || null} onChange={(s) => set("firma_tecnico", s)} />
       <TextField label="Gerente de turno" testID="s-gerente_turno" value={sheet.gerente_turno} onChangeText={(v) => set("gerente_turno", v)} placeholder="Nombre" />
     </>
   );
@@ -233,6 +236,45 @@ function BodyConditions({ selected, onToggle }: { selected: string[]; onToggle: 
           </Pressable>
         );
       })}
+    </View>
+  );
+}
+
+function SignatureField({ sig, onChange }: { sig: Signature | null; onChange: (s: Signature | null) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ marginBottom: spacing.md }}>
+      <Text style={styles.fieldLabel}>Firma del técnico responsable</Text>
+      {sig && sig.strokes?.length ? (
+        <View testID="signature-preview" style={styles.sigBox}>
+          <SignaturePreview sig={sig} />
+          <Text style={styles.sigMeta}>Firmado: {sig.signed_at}</Text>
+          <View style={styles.sigActions}>
+            <Pressable testID="signature-redo" onPress={() => setOpen(true)} style={[styles.chip, styles.sigBtn]}>
+              <Ionicons name="create-outline" size={16} color={colors.onSurfaceSecondary} />
+              <Text style={styles.chipText}>Volver a firmar</Text>
+            </Pressable>
+            <Pressable testID="signature-remove" onPress={() => onChange(null)} style={[styles.chip, styles.sigBtn]}>
+              <Ionicons name="trash-outline" size={16} color={colors.error} />
+              <Text style={[styles.chipText, { color: colors.error }]}>Quitar</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <Pressable testID="signature-open" onPress={() => setOpen(true)} style={styles.sigEmpty}>
+          <Ionicons name="pencil-outline" size={20} color={colors.onSurfaceSecondary} />
+          <Text style={styles.chipText}>Tocar para firmar</Text>
+        </Pressable>
+      )}
+      <SignatureModal
+        visible={open}
+        title="Firma del técnico responsable"
+        onClose={() => setOpen(false)}
+        onSave={(s) => {
+          onChange(s);
+          setOpen(false);
+        }}
+      />
     </View>
   );
 }
@@ -336,6 +378,22 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
   chipText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
   chipTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
+  sigBox: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, padding: spacing.md },
+  sigMeta: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: spacing.xs },
+  sigActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  sigBtn: { minHeight: 44 },
+  sigEmpty: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
   fCard: {
     backgroundColor: colors.brandTertiary,
     borderRadius: radius.lg,
