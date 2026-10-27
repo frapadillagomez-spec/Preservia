@@ -154,9 +154,9 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
       <SectionLabel text="Condición del cuerpo (Factor F)" />
       <BodyConditions selected={sheet.condiciones} onToggle={(k) => toggle("condiciones", k)} />
 
-      <SectionLabel text="Vello facial" />
+      <SectionLabel text="Vello Facial" />
       <Chips options={SELLO} selected={sheet.sello_facial} onToggle={(k) => toggle("sello_facial", k)} group="sello" />
-      <TextField label="Otro (vello facial)" testID="s-sello_facial_otro" value={sheet.sello_facial_otro} onChangeText={(v) => set("sello_facial_otro", v)} placeholder="Especifica" />
+      <TextField label="Otro (Vello Facial)" testID="s-sello_facial_otro" value={sheet.sello_facial_otro} onChangeText={(v) => set("sello_facial_otro", v)} placeholder="Especifica" />
 
       <SectionLabel text="Signos tempranos de descomposición" />
       <Chips options={SIGNOS} selected={sheet.signos} onToggle={(k) => toggle("signos", k)} group="signos" />
