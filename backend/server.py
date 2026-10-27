@@ -733,7 +733,46 @@ async def get_case(case_id: str, user: Dict[str, Any] = Depends(get_current_user
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     notes = await db.notes.find({"case_id": case_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
     c["notes"] = notes
+    c["kf_summary"] = case_kf_summary(c)
     return {"case": c}
+
+
+def case_kf_summary(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Resumen K, F, masa magra y volumen recomendado (V = K x MM x F)."""
+    sheet = c.get("case_sheet") or {}
+    gc_key = sheet.get("condicion_general") or ""
+    gc = GENERAL_CONDITIONS.get(gc_key)
+    k = {"value": gc[3], "label": gc[0], "min": gc[1], "max": gc[2]} if gc else None
+    ff = compute_factor_f(sheet.get("condiciones") or [])
+    f = ({"value": ff["f"], "dominant_label": ff["dominant_label"],
+          "secondary_label": ff["secondary_label"], "adjustment_pct": ff["adjustment_pct"]} if ff else None)
+    lbm = None
+    # Prioridad: último cálculo guardado con masa magra; si no, peso/estatura de la hoja.
+    for calc in reversed(c.get("calculations") or []):
+        r = calc.get("results") or {}
+        if isinstance(r.get("lbm_kg"), (int, float)) and r["lbm_kg"] > 0:
+            lbm = {"kg": round(float(r["lbm_kg"]), 1), "method": r.get("lbm_method") or r.get("method") or "",
+                   "source": "Último cálculo guardado"}
+            break
+    if lbm is None:
+        try:
+            w = float(str(sheet.get("peso") or "").replace(",", "."))
+            h = float(str(sheet.get("altura") or "").replace(",", "."))
+            sex = c.get("sex")
+            if w > 0 and h > 0 and sex in ("male", "female"):
+                info = compute_lbm(sex, w, h, "average")
+                lbm = {"kg": round(info["lbm"], 1), "method": LBM_METHOD_LABELS[info["method"]],
+                       "source": "Peso y altura de la hoja"}
+        except (ValueError, TypeError, KeyError):
+            lbm = None
+    f_val = f["value"] if f else 1.0
+    volume_l = round(k["value"] * lbm["kg"] * f_val, 2) if (k and lbm) else None
+    missing = []
+    if not k:
+        missing.append("condición general (Factor K)")
+    if not lbm:
+        missing.append("masa magra (peso, altura y sexo, o un cálculo guardado)")
+    return {"k": k, "f": f, "f_applied": f_val, "lbm": lbm, "volume_l": volume_l, "missing": missing}
 
 
 @api_router.put("/cases/{case_id}")

@@ -44,4 +44,5 @@ Herramienta móvil profesional para embalsamadores/tanatopraxia que combina cál
 - Done: Ayuda texts updated (no login), F out-of-range warning in calculators, wizard back fallback.
 - Done: Technician digital signature (finger pad, react-native-svg) in Hoja del caso, stored in case_sheet.firma_tecnico, printed as vector in PDF.
 - Done: Factor K (condición general, L/kg) single-select in Hoja del caso; new calculator "kvolume" V = K × masa magra × F; injection recommended_l uses K when sheet has it; PDF row.
+- Done: "Resumen K y F" card at top of Cálculos tab (GET /api/cases/{id} returns kf_summary: K, F, LBM from last saved calc or sheet peso/altura+sex, volume = K×MM×F).
 - Backlog: offline sync (P1); PIN/biometric lock (P2).

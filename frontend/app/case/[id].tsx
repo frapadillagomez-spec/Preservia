@@ -29,6 +29,7 @@ import { useToast } from "@/src/components/Toast";
 import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateTimeMx } from "@/src/utils/mxtime";
+import { KFSummary, KFSummaryCard } from "@/src/components/KFSummaryCard";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
@@ -45,6 +46,7 @@ type CaseData = {
   calculations: Calc[];
   notes: Note[];
   logbook?: LogEntry[];
+  kf_summary?: KFSummary;
 };
 
 const CALCULATORS: { type: string; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
@@ -483,6 +485,7 @@ export default function CaseDetail() {
       {/* Content */}
       {tab === "calc" && (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {data.kf_summary && <KFSummaryCard s={data.kf_summary} />}
           <Text style={styles.sectionLabel}>Asistente de cálculo</Text>
           <Pressable
             testID="open-wizard"
