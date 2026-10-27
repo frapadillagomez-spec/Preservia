@@ -50,6 +50,7 @@ function fmtDate(iso: string) {
 
 const CALC_ICONS: Record<string, ComponentProps<typeof Ionicons>["name"]> = {
   volume: "flask-outline",
+  kvolume: "speedometer-outline",
   lbm: "body-outline",
   concentration: "beaker-outline",
 };

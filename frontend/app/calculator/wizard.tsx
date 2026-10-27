@@ -67,8 +67,10 @@ export default function Wizard() {
 
   const num = (s: string) => parseFloat((s || "").replace(",", "."));
 
-  const caseInputs = () =>
-    caseType === "sheet" ? { case_type: caseType, factor_f: num(factorF) } : { case_type: caseType };
+  const caseInputs = () => ({
+    ...(caseType === "sheet" ? { case_type: caseType, factor_f: num(factorF) } : { case_type: caseType }),
+    ...(sheetInfo?.general ? { k_factor: sheetInfo.general.avg } : {}),
+  });
 
   const ratio = useMemo(() => {
     const a = num(c2);
@@ -382,6 +384,12 @@ export default function Wizard() {
                       <Text style={styles.resultKey}>masa magra</Text>
                       <Text style={styles.resultNum}>{result.results.lbm_kg} kg</Text>
                     </View>
+                    {result.results.k_factor !== undefined && (
+                      <View testID="wiz-recommended-k" style={styles.resultItem}>
+                        <Text style={styles.resultKey}>recomendado K×MM×F (K {result.results.k_factor} L/kg)</Text>
+                        <Text style={styles.resultNum}>{result.results.recommended_l} L</Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.resultHint}>
                     {result.results.case_type} ({result.results.adjustment})

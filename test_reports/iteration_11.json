@@ -1,0 +1,35 @@
+{
+  "summary": "Factor K de Condición General tested end-to-end. Backend: new test_factor_k.py (24 tests) + regression test_factor_f/test_signature/test_case_sheet = 62/62 PASS. kvolume 80kg/175cm/male/avg K .135 F 1.093 -> 8.93 L; K bounds 0.10/0.18 inclusive, 0.09/0.19/0.5/'abc'/null/missing -> 400; injection k_factor 0.135 -> recommended_l 8.17 (8.93 with F 1.093), results.k_factor present only when sent, invalid K -> 400; case_sheet.condicion_general persists; POST /cases/{id}/calculations kvolume label 'Volumen por Factor K'; PDF shows 'Condicion general (Factor K)' 'Caso rutinario - K 0.12-0.15 L/kg (prom. 0.135)'. Frontend (375x667): Hoja del caso kcond-<key> single-select + tap-again deselect works in /case/sheet and /case/new, saved correctly; case hub Cálculos tab shows open-calc-kvolume -> /calculator/kvolume?caseId=; sheet prefill works (kcond-calc-rutinario active, K 0.135, Factor F tab preselected 1.093, weight 80/height 175); K 0.25 shows k-factor-warning and blocks Calcular (no API call, toast); result 8.93 L and save works (persisted, navigates back to case); comma decimal '0,15' accepted; wizard step 3 shows wiz-recommended-k 'recomendado K×MM×F 8.93 L' and saves. 'Vello Facial' label present. No deprecated expo packages detected. Only minor UX notes.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "KFactorPicker", "issue": "After manually editing K (e.g. 0.15 while 'Cuerpo pequeño' 0.10-0.12 chip is selected) the chip stays highlighted, so the UI shows a condition inconsistent with the applied K. Consider deselecting chip when K is outside the selected condition's range, or showing 'personalizado'.", "testID": "kcond-calc-pequeno", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/calculator/kvolume result card", "issues": ["Result grid shows raw backend keys (volume_l, gallons, k_factor, factor_f, lbm_kg, lbm_method, case_type) instead of Spanish labels (same pre-existing pattern as other calculators)."]},
+      {"screen": "Hoja del caso - Condición general (Factor K)", "issues": ["Selected row background (rgb 226,232,240) is barely distinguishable from unselected (rgb 241,245,249); selection relies mostly on the radio icon. Consider a stronger active border/background."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_factor_k.py", "/app/test_reports/pytest/pytest_results_iter11.xml"],
+  "action_items": [
+    "(LOW) KFactorPicker: reflect manual K edits in chip selection (deselect or mark custom when outside range).",
+    "(LOW) Localize result keys in /calculator/[type] result grid.",
+    "(LOW) Strengthen active style of kcond-<key> rows in CaseSheetForm.",
+    "(INFO) Old auth-era tests in test_preservia_api.py / test_pdf_publish.py / test_no_auth_flow.py still fail (15) because auth was removed and LBM formula changed; consider deleting/updating them."
+  ],
+  "critical_code_review_comments": [
+    "calculator/[type].tsx save() re-builds inputs at save time rather than reusing the inputs that produced the displayed result; safe today because every input change resets result (disabling save), but fragile.",
+    "Wizard always sends sheet K avg (no way to override K in wizard) - acceptable per spec.",
+    "Backend sheet endpoint does not validate condicion_general key (any string saved); PDF/frontend ignore unknown keys so harmless.",
+    "Expo log reports expo@54.0.35 (expected ~54.0.37) - request mentions SDK 58 but project is on SDK 54; minor patch-version mismatch warnings only."
+  ],
+  "updated_files": ["/app/backend/tests/test_factor_k.py"],
+  "success_rate": {"backend": "100% (62/62 relevant; 15 obsolete auth tests ignored)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Created TEST_KUI, TEST_KUI_SHEET, TEST_NewK cases for UI tests - all deleted afterwards; pytest fixtures delete their own cases.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "No auth. Backend URL from frontend/.env EXPO_PUBLIC_BACKEND_URL. Factor K tests in test_factor_k.py. LBM avg for 80kg/175cm male = 60.505 kg. Calculator testIDs: kcond-calc-<key>, k-factor-input, k-factor-warning, casetype-<sheet|normal|jaundice|edema>, casetype-factor-input, calc-compute-button, calc-save-button, calc-result. Sheet: kcond-<key>, sheet-save-button. Wizard: wiz-weight, wiz-height, wiz-compute-lbm, wiz-next-0, wiz-c2, wiz-c1, wiz-next-1, wiz-compute-volume, wiz-recommended-k, wiz-save.",
+  "rca_of_issue": ""
+}

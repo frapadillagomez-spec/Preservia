@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/src/api";
-import { computeFactorF, FactorF } from "@/src/data/factorF";
+import { computeFactorF, FactorF, findGeneralCondition, GeneralCondition } from "@/src/data/factorF";
 
 export type CaseSheetInfo = {
   factor: FactorF | null;
+  general: GeneralCondition | null;
   weight: string;
   height: string;
   sex: "male" | "female" | "";
@@ -22,6 +23,7 @@ export function useCaseSheetInfo(caseId?: string): CaseSheetInfo | null {
         const sh = c.case_sheet || {};
         setInfo({
           factor: computeFactorF(sh.condiciones),
+          general: findGeneralCondition(sh.condicion_general),
           weight: String(sh.peso || "").trim(),
           height: String(sh.altura || "").trim(),
           sex: c.sex || "",

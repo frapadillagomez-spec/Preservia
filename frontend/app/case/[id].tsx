@@ -49,6 +49,7 @@ type CaseData = {
 
 const CALCULATORS: { type: string; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
   { type: "volume", label: "Volumen de solución", icon: "flask-outline" },
+  { type: "kvolume", label: "Volumen por Factor K", icon: "speedometer-outline" },
   { type: "lbm", label: "Masa magra corporal", icon: "body-outline" },
   { type: "concentration", label: "Concentración / Dilución", icon: "beaker-outline" },
 ];

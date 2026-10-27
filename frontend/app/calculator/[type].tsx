@@ -17,7 +17,8 @@ import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
 import { FactorFPicker, CaseType, isFactorFValid } from "@/src/components/FactorFPicker";
-import { F_MAX, F_MIN } from "@/src/data/factorF";
+import { F_MAX, F_MIN, GENERAL_CONDITIONS, K_MAX, K_MIN } from "@/src/data/factorF";
+import { isKValid, KFactorPicker } from "@/src/components/KFactorPicker";
 
 type FieldDef = { key: string; label: string; placeholder: string };
 
@@ -31,8 +32,21 @@ export type LbmMethod = (typeof LBM_METHOD_OPTS)[number]["key"];
 
 const CONFIG: Record<
   string,
-  { title: string; subtitle: string; icon: ComponentProps<typeof Ionicons>["name"]; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean; hasMethod?: boolean }
+  { title: string; subtitle: string; icon: ComponentProps<typeof Ionicons>["name"]; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean; hasMethod?: boolean; hasK?: boolean }
 > = {
+  kvolume: {
+    title: "Volumen por Factor K",
+    subtitle: "V = K × masa magra × F, con K según la condición general",
+    icon: "speedometer-outline",
+    hasSex: true,
+    hasMethod: true,
+    hasCaseType: true,
+    hasK: true,
+    fields: [
+      { key: "weight_kg", label: "Peso corporal (kg)", placeholder: "Ej. 70" },
+      { key: "height_cm", label: "Estatura (cm)", placeholder: "Ej. 172" },
+    ],
+  },
   volume: {
     title: "Volumen de solución",
     subtitle: "Solución arterial estimada según el peso o la masa magra y el tipo de caso",
@@ -64,6 +78,30 @@ const CONFIG: Record<
   },
 };
 
+const RESULT_LABELS: Record<string, string> = {
+  liters: "Litros",
+  gallons: "Galones",
+  weight_kg: "Peso (kg)",
+  case_type: "Tipo de caso",
+  adjustment: "Ajuste",
+  basis: "Base",
+  lbm_kg: "Masa magra (kg)",
+  lbm_method: "Método MM",
+  method: "Método",
+  boer_kg: "Boer (kg)",
+  james_kg: "James (kg)",
+  janmahasatian_kg: "Janmahasatian (kg)",
+  fat_kg: "Grasa (kg)",
+  fat_pct: "Grasa (%)",
+  volume_l: "Volumen (L)",
+  k_factor: "Factor K (L/kg)",
+  factor_f: "Factor F",
+  concentrate_ml: "Concentrado (mL)",
+  water_ml: "Agua (mL)",
+  total_ml: "Total (mL)",
+  total_l: "Total (L)",
+};
+
 export default function Calculator() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -75,6 +113,8 @@ export default function Calculator() {
   const [method, setMethod] = useState<LbmMethod>("average");
   const [caseType, setCaseType] = useState<CaseType>("normal");
   const [factorF, setFactorF] = useState("");
+  const [kCond, setKCond] = useState("");
+  const [kFactor, setKFactor] = useState("");
   const sheetInfo = useCaseSheetInfo(caseId);
   const [basis, setBasis] = useState<"total" | "lean">("total");
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
@@ -86,6 +126,10 @@ export default function Calculator() {
     if (sheetInfo.factor) {
       setCaseType("sheet");
       setFactorF(sheetInfo.factor.f.toFixed(3));
+    }
+    if (sheetInfo.general) {
+      setKCond(sheetInfo.general.key);
+      setKFactor(sheetInfo.general.avg.toFixed(3));
     }
     setValues((v) => ({
       ...v,
@@ -112,6 +156,12 @@ export default function Calculator() {
     }
     if (cfg.hasSex) inputs.sex = sex;
     if (cfg.hasMethod) inputs.method = method;
+    if (cfg.hasK) {
+      const k = parseFloat(kFactor.replace(",", "."));
+      if (isNaN(k)) return null;
+      inputs.k_factor = k;
+      inputs.lbm_method = method;
+    }
     if (cfg.hasCaseType) {
       inputs.case_type = caseType;
       if (caseType === "sheet") {
@@ -135,6 +185,10 @@ export default function Calculator() {
   const calculate = async () => {
     if (cfg.hasCaseType && caseType === "sheet" && !isFactorFValid(factorF)) {
       toast.show(`El Factor F debe estar entre ${F_MIN} y ${F_MAX}`, "error");
+      return;
+    }
+    if (cfg.hasK && !isKValid(kFactor)) {
+      toast.show(`Elige la condición general o un Factor K entre ${K_MIN} y ${K_MAX} L/kg`, "error");
       return;
     }
     const inputs = buildInputs();
@@ -196,7 +250,7 @@ export default function Calculator() {
               <View style={styles.resultGrid}>
                 {Object.entries(result.results).map(([k, v]) => (
                   <View key={k} style={styles.resultItem}>
-                    <Text style={styles.resultKey}>{k}</Text>
+                    <Text style={styles.resultKey}>{RESULT_LABELS[k] || k}</Text>
                     <Text style={styles.resultNum}>{String(v)}</Text>
                   </View>
                 ))}
@@ -219,6 +273,26 @@ export default function Calculator() {
                 </Pressable>
               ))}
             </View>
+          )}
+
+          {cfg.hasK && (
+            <KFactorPicker
+              condKey={kCond}
+              onCond={(k, avg) => {
+                setKCond(k);
+                setKFactor(avg.toFixed(3));
+                setResult(null);
+              }}
+              kFactor={kFactor}
+              onK={(t) => {
+                setKFactor(t);
+                const g = GENERAL_CONDITIONS.find((c) => c.key === kCond);
+                const v = parseFloat(t.replace(",", "."));
+                if (g && !(v >= g.min - 1e-9 && v <= g.max + 1e-9)) setKCond("");
+                setResult(null);
+              }}
+              fromSheet={!!sheetInfo?.general && kCond === sheetInfo.general.key}
+            />
           )}
 
           {cfg.hasCaseType && (

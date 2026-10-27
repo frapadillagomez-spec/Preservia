@@ -290,6 +290,14 @@ BODY_CONDITIONS: Dict[str, Any] = {
 }
 F_MIN, F_MAX = 0.75, 1.35
 
+# ---- Factor K por condición general (L/kg) ----
+GENERAL_CONDITIONS: Dict[str, Any] = {
+    "pequeno": ("Cuerpo pequeño, deshidratado o caquéctico", 0.10, 0.12, 0.11),
+    "rutinario": ("Caso rutinario", 0.12, 0.15, 0.135),
+    "dificil": ("Caso difícil o distribución vascular deficiente", 0.15, 0.18, 0.165),
+}
+K_MIN, K_MAX = 0.10, 0.18
+
 
 def compute_factor_f(keys: List[str]) -> Optional[Dict[str, Any]]:
     """Condición dominante (mayor efecto |F-1|) + ajuste de ±5% / ±10% por la segunda.
@@ -422,6 +430,13 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             water_ml = max(total_ml - concentrate_ml, 0)
             # Case-type factor adjusts the volume the body needs (lean-mass reference)
             recommended_ml = (lbm * 2.20462 / 50.0) * 3785.41 * factor
+            k_in = inputs.get("k_factor")
+            if k_in not in (None, ""):
+                k_val = float(k_in)
+                if not (K_MIN <= k_val <= K_MAX):
+                    raise ValueError(f"El Factor K debe estar entre {K_MIN} y {K_MAX} L/kg")
+                # Volumen recomendado = K x masa magra x F
+                recommended_ml = k_val * lbm * factor * 1000.0
             v2_per_bottle_ml = (c1 * 473.0) / c2
             recommended_bottles = recommended_ml / v2_per_bottle_ml if v2_per_bottle_ml > 0 else 0
             bottles = concentrate_ml / 473.0
@@ -446,10 +461,42 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 "case_type": labels.get(case_type, "Normal"),
                 "adjustment": f"x{factor}",
             }
+            if k_in not in (None, ""):
+                results["k_factor"] = round(float(k_in), 3)
             summary = (
                 f"V2 = {results['total_l']} L: formaldehido {results['formaldehyde_ml']:.0f} mL + "
                 f"agua {results['water_injection_ml']:.0f} mL - {results['case_type']} (x{factor})"
             )
+            return {"results": results, "summary": summary}
+
+        if calc_type == "kvolume":
+            # V = K (L/kg) x masa magra (kg) x F
+            weight_kg = float(inputs["weight_kg"])
+            height_cm = float(inputs["height_cm"])
+            sex = str(inputs.get("sex", "male")).lower()
+            method = str(inputs.get("lbm_method", "average")).lower()
+            k = float(inputs["k_factor"])
+            if not (K_MIN <= k <= K_MAX):
+                raise ValueError(f"El Factor K debe estar entre {K_MIN} y {K_MAX} L/kg")
+            case_type = str(inputs.get("case_type", "normal")).lower()
+            factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
+            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema", "sheet": "Factor F (hoja del caso)"}
+            f = factors.get(case_type, 1.0)
+            if case_type == "sheet":
+                f = round(min(max(float(inputs.get("factor_f", 1.0)), F_MIN), F_MAX), 3)
+            lbm_info = compute_lbm(sex, weight_kg, height_cm, method)
+            lbm = max(lbm_info["lbm"], 0.0)
+            liters = k * lbm * f
+            results = {
+                "volume_l": round(liters, 2),
+                "gallons": round(liters / 3.78541, 2),
+                "k_factor": round(k, 3),
+                "factor_f": f,
+                "lbm_kg": round(lbm, 1),
+                "lbm_method": LBM_METHOD_LABELS[lbm_info["method"]],
+                "case_type": labels.get(case_type, "Normal"),
+            }
+            summary = f"V = K x MM x F = {k:.3f} L/kg x {lbm:.1f} kg x {f:.3f} = {results['volume_l']} L"
             return {"results": results, "summary": summary}
 
         if calc_type == "concentration":
@@ -479,6 +526,7 @@ CALC_LABELS = {
     "lbm": "Masa magra corporal",
     "concentration": "Concentracion / Dilucion",
     "injection": "Volumen de inyeccion",
+    "kvolume": "Volumen por Factor K",
 }
 
 
@@ -635,7 +683,7 @@ async def import_case(payload: Dict[str, Any], user: Dict[str, Any] = Depends(ge
     if not isinstance(src, dict) or not (src.get("name") or src.get("deceased_name")):
         raise HTTPException(status_code=400, detail="Archivo de caso invalido")
     case_id = f"case_{uuid.uuid4().hex[:12]}"
-    valid_types = {"volume", "lbm", "concentration", "injection"}
+    valid_types = {"volume", "lbm", "concentration", "injection", "kvolume"}
     calculations: List[Dict[str, Any]] = []
     for c in (src.get("calculations") or []):
         if not isinstance(c, dict) or c.get("type") not in valid_types:
@@ -862,6 +910,7 @@ CALC_TYPE_LABELS = {
     "volume": "Volumen de solución",
     "lbm": "Masa magra corporal",
     "concentration": "Concentración / Dilución",
+    "kvolume": "Volumen por Factor K",
 }
 
 
@@ -884,7 +933,7 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
     active_cases = 0
     archived_cases = 0
     total_calcs = 0
-    calc_by_type: Dict[str, int] = {"volume": 0, "lbm": 0, "concentration": 0}
+    calc_by_type: Dict[str, int] = {"volume": 0, "lbm": 0, "concentration": 0, "kvolume": 0}
     cases_last_30 = 0
 
     # Last 6 months buckets (oldest -> newest)
@@ -969,6 +1018,7 @@ INPUT_LABELS = {
     "method": "Metodo masa magra",
     "lbm_method": "Metodo masa magra",
     "factor_f": "Factor de correccion F",
+    "k_factor": "Factor K (L/kg)",
 }
 
 SEX_LABELS = {"male": "Masculino", "female": "Femenino"}
@@ -1204,6 +1254,10 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         addrow("Lesiones", sheet.get("caracteristicas_lesiones"))
         addrow("Otras caracteristicas", sheet.get("caracteristicas_otros"))
         addrow("Equipo medico", sel(sheet.get("equipo_medico"), SHEET_EQUIPO, sheet.get("equipo_medico_otros", "")))
+        gc = GENERAL_CONDITIONS.get(sheet.get("condicion_general") or "")
+        if gc:
+            addrow("Condicion general (Factor K)",
+                   f"{gc[0]} - K {gc[1]:.2f}-{gc[2]:.2f} L/kg (prom. {gc[3]:.3f} L/kg)")
         conds = [k for k in (sheet.get("condiciones") or []) if k in BODY_CONDITIONS]
         if conds:
             addrow("Condicion del cuerpo", "\n".join(

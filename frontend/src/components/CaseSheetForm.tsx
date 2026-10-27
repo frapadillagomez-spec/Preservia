@@ -4,7 +4,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { Signature, SignatureModal, SignaturePreview } from "@/src/components/SignaturePad";
 
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
-import { BODY_CONDITIONS, computeFactorF } from "@/src/data/factorF";
+import { BODY_CONDITIONS, computeFactorF, GENERAL_CONDITIONS } from "@/src/data/factorF";
 
 type Opt = { key: string; label: string };
 
@@ -78,6 +78,7 @@ export const EMPTY_SHEET: Sheet = {
   tipo_caso: [],
   tipo_caso_otro: "",
   complexion: "",
+  condicion_general: "",
   condiciones: [],
   sello_facial: [],
   sello_facial_otro: "",
@@ -151,6 +152,9 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
       <SectionLabel text="Complexión" />
       <Chips options={COMPLEXION} selected={sheet.complexion ? [sheet.complexion] : []} onToggle={(k) => set("complexion", sheet.complexion === k ? "" : k)} group="complexion" />
 
+      <SectionLabel text="Condición general (Factor K)" />
+      <GeneralConditions selected={sheet.condicion_general} onSelect={(k) => set("condicion_general", sheet.condicion_general === k ? "" : k)} />
+
       <SectionLabel text="Condición del cuerpo (Factor F)" />
       <BodyConditions selected={sheet.condiciones} onToggle={(k) => toggle("condiciones", k)} />
 
@@ -201,6 +205,32 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
       <SignatureField sig={sheet.firma_tecnico || null} onChange={(s) => set("firma_tecnico", s)} />
       <TextField label="Gerente de turno" testID="s-gerente_turno" value={sheet.gerente_turno} onChangeText={(v) => set("gerente_turno", v)} placeholder="Nombre" />
     </>
+  );
+}
+
+function GeneralConditions({ selected, onSelect }: { selected: string; onSelect: (k: string) => void }) {
+  return (
+    <View>
+      <Text style={styles.hint}>Elige una. Se usa el K promedio en el volumen: V = K × masa magra × F.</Text>
+      {GENERAL_CONDITIONS.map((g) => {
+        const active = selected === g.key;
+        return (
+          <Pressable
+            key={g.key}
+            testID={`kcond-${g.key}`}
+            onPress={() => onSelect(g.key)}
+            style={[styles.condRow, active && styles.condRowActive]}
+          >
+            <Ionicons name={active ? "radio-button-on" : "radio-button-off"} size={20} color={active ? colors.onSurface : colors.onSurfaceTertiary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.condText, active && styles.condTextActive]}>{g.label}</Text>
+              <Text style={styles.condF}>K {g.min.toFixed(2)}–{g.max.toFixed(2)} L/kg</Text>
+            </View>
+            <Text style={[styles.condF, active && styles.condTextActive]}>{g.avg.toFixed(3)} L/kg</Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -418,7 +448,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
     marginBottom: spacing.xs,
   },
-  condRowActive: { borderColor: colors.borderStrong, backgroundColor: colors.surfaceTertiary },
+  condRowActive: { borderColor: colors.surfaceInverse, borderWidth: 2, backgroundColor: colors.brandTertiary },
   condText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
   condTextActive: { color: colors.onSurface, fontFamily: font.semibold },
   condF: { color: colors.onSurfaceTertiary, fontFamily: font.mono, fontSize: fontSize.sm },

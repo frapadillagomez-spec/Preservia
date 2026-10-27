@@ -43,4 +43,5 @@ Herramienta móvil profesional para embalsamadores/tanatopraxia que combina cál
 - Expo SDK upgraded 54 -> 58 (RN 0.88, React 19.3); @expo/vector-icons replaced by @react-native-vector-icons/ionicons.
 - Done: Ayuda texts updated (no login), F out-of-range warning in calculators, wizard back fallback.
 - Done: Technician digital signature (finger pad, react-native-svg) in Hoja del caso, stored in case_sheet.firma_tecnico, printed as vector in PDF.
+- Done: Factor K (condición general, L/kg) single-select in Hoja del caso; new calculator "kvolume" V = K × masa magra × F; injection recommended_l uses K when sheet has it; PDF row.
 - Backlog: offline sync (P1); PIN/biometric lock (P2).

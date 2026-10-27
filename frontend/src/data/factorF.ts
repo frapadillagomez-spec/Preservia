@@ -31,6 +31,17 @@ export const BODY_CONDITIONS: BodyCondition[] = [
 export const F_MIN = 0.75;
 export const F_MAX = 1.35;
 
+// Factor K por condición general (L/kg). Volumen = K × masa magra × F.
+export type GeneralCondition = { key: string; label: string; min: number; max: number; avg: number };
+export const GENERAL_CONDITIONS: GeneralCondition[] = [
+  { key: "pequeno", label: "Cuerpo pequeño, deshidratado o caquéctico", min: 0.1, max: 0.12, avg: 0.11 },
+  { key: "rutinario", label: "Caso rutinario", min: 0.12, max: 0.15, avg: 0.135 },
+  { key: "dificil", label: "Caso difícil o distribución vascular deficiente", min: 0.15, max: 0.18, avg: 0.165 },
+];
+export const K_MIN = 0.1;
+export const K_MAX = 0.18;
+export const findGeneralCondition = (key?: string) => GENERAL_CONDITIONS.find((g) => g.key === key) || null;
+
 export type FactorF = {
   f: number;
   dominant: BodyCondition;
