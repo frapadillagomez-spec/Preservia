@@ -16,10 +16,8 @@ import { colors } from "@/src/theme";
 // Disable logbox errors so users can see the app.
 LogBox.ignoreAllLogs(true);
 
-// Keep the native splash visible from cold start until icon fonts register.
-// Required because @expo/vector-icons' componentDidMount fallback fires
-// Font.loadAsync against a broken vendor path if any <Icon> mounts before
-// the family is registered — which throws on Android Expo Go.
+// Keep the native splash visible from cold start until icon fonts register
+// (avoids icons rendering before the Ionicons family is available in Expo Go).
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {

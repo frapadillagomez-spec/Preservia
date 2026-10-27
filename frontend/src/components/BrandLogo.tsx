@@ -1,12 +1,12 @@
 import { Image } from "expo-image";
-import { StyleSheet, View, ViewStyle } from "react-native";
+import { ImageStyle, StyleSheet, View } from "react-native";
 
 import { spacing } from "@/src/theme";
 
 const LOGO = require("../../assets/images/preservia-logo.webp");
 
 // Preservia wordmark (aspect ratio ~6:1). Pass height; width auto-scales.
-export function BrandLogo({ height = 26, style }: { height?: number; style?: ViewStyle }) {
+export function BrandLogo({ height = 26, style }: { height?: number; style?: ImageStyle }) {
   return (
     <Image
       source={LOGO}

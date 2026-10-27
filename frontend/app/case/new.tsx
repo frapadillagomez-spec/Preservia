@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -17,6 +17,7 @@ import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { mxToISO, nowMxParts, splitMx } from "@/src/utils/mxtime";
+import { CaseSheetForm, EMPTY_SHEET, Sheet } from "@/src/components/CaseSheetForm";
 
 
 export default function NewCase() {
@@ -35,6 +36,7 @@ export default function NewCase() {
   const [startTime, setStartTime] = useState("");
   const [endDate, setEndDate] = useState("");
   const [endTime, setEndTime] = useState("");
+  const [sheet, setSheet] = useState<Sheet>(EMPTY_SHEET);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -54,6 +56,7 @@ export default function NewCase() {
       const [ed, et] = splitMx(c.embalming_end);
       setEndDate(ed);
       setEndTime(et);
+      if (c.case_sheet && typeof c.case_sheet === "object") setSheet({ ...EMPTY_SHEET, ...c.case_sheet });
     } catch {
       toast.show("No se pudo cargar el caso", "error");
     }
@@ -83,14 +86,24 @@ export default function NewCase() {
       embalming_start: mxToISO(startDate, startTime),
       embalming_end: mxToISO(endDate, endTime),
     };
+    // Datos comunes se sincronizan con la hoja del caso.
+    const fullSheet: Sheet = {
+      ...sheet,
+      nombre_difunto: payload.deceased_name,
+      fecha_ingreso: startDate.trim() || sheet.fecha_ingreso || nowMxParts()[0],
+      inicio_emb: startTime.trim(),
+      termino_emb: endTime.trim(),
+    };
     setBusy(true);
     try {
       if (isEdit) {
         await api.put(`/cases/${id}`, payload);
+        await api.put(`/cases/${id}/sheet`, { sheet: fullSheet });
         toast.show("Caso actualizado", "success");
         router.back();
       } else {
         const resp = await api.post("/cases", payload);
+        await api.put(`/cases/${resp.case.case_id}/sheet`, { sheet: fullSheet });
         toast.show("Caso creado", "success");
         router.replace(`/case/${resp.case.case_id}`);
       }
@@ -204,6 +217,13 @@ export default function NewCase() {
               <Field testID="end-time" label="Hora (HH:MM)" value={endTime} onChangeText={setEndTime} placeholder="11:30" />
             </View>
           </View>
+
+          <View style={styles.sheetHeader}>
+            <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
+            <Text style={styles.sheetTitle}>Hoja del caso</Text>
+          </View>
+          <Text style={styles.hint}>Análisis del caso — Embalsamamiento. Todos los campos son opcionales.</Text>
+          <CaseSheetForm sheet={sheet} onChange={setSheet} compact />
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -273,6 +293,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   nowText: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginBottom: spacing.xs,
+  },
+  sheetTitle: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xl },
   dtRow: { flexDirection: "row", gap: spacing.md },
   dtCol: { flex: 2 },
   dtColSm: { flex: 1 },

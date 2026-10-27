@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -6,7 +6,8 @@ import {
   View,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -14,6 +15,8 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
+import { FactorFPicker, CaseType } from "@/src/components/FactorFPicker";
 
 type FieldDef = { key: string; label: string; placeholder: string };
 
@@ -27,7 +30,7 @@ export type LbmMethod = (typeof LBM_METHOD_OPTS)[number]["key"];
 
 const CONFIG: Record<
   string,
-  { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean; hasMethod?: boolean }
+  { title: string; subtitle: string; icon: ComponentProps<typeof Ionicons>["name"]; fields: FieldDef[]; hasSex?: boolean; hasCaseType?: boolean; hasBasis?: boolean; hasMethod?: boolean }
 > = {
   volume: {
     title: "Volumen de solución",
@@ -69,11 +72,27 @@ export default function Calculator() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [sex, setSex] = useState<"male" | "female">("male");
   const [method, setMethod] = useState<LbmMethod>("average");
-  const [caseType, setCaseType] = useState<"normal" | "jaundice" | "edema">("normal");
+  const [caseType, setCaseType] = useState<CaseType>("normal");
+  const [factorF, setFactorF] = useState("");
+  const sheetInfo = useCaseSheetInfo(caseId);
   const [basis, setBasis] = useState<"total" | "lean">("total");
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!sheetInfo) return;
+    if (sheetInfo.factor) {
+      setCaseType("sheet");
+      setFactorF(sheetInfo.factor.f.toFixed(3));
+    }
+    setValues((v) => ({
+      ...v,
+      weight_kg: v.weight_kg || sheetInfo.weight,
+      height_cm: v.height_cm || sheetInfo.height,
+    }));
+    if (sheetInfo.sex) setSex(sheetInfo.sex);
+  }, [sheetInfo]);
 
   if (!cfg) {
     return (
@@ -92,7 +111,14 @@ export default function Calculator() {
     }
     if (cfg.hasSex) inputs.sex = sex;
     if (cfg.hasMethod) inputs.method = method;
-    if (cfg.hasCaseType) inputs.case_type = caseType;
+    if (cfg.hasCaseType) {
+      inputs.case_type = caseType;
+      if (caseType === "sheet") {
+        const f = parseFloat(factorF.replace(",", "."));
+        if (isNaN(f)) return null;
+        inputs.factor_f = f;
+      }
+    }
     if (cfg.hasBasis) {
       inputs.basis = basis;
       if (basis === "lean") {
@@ -190,30 +216,20 @@ export default function Calculator() {
           )}
 
           {cfg.hasCaseType && (
-            <View>
-              <Text style={styles.selectorLabel}>Tipo de caso</Text>
-              <View style={styles.segment}>
-                {([
-                  { key: "normal", label: "Normal" },
-                  { key: "jaundice", label: "Ictericia" },
-                  { key: "edema", label: "Edema" },
-                ] as const).map((c) => (
-                  <Pressable
-                    key={c.key}
-                    testID={`casetype-${c.key}`}
-                    onPress={() => {
-                      setCaseType(c.key);
-                      setResult(null);
-                    }}
-                    style={[styles.segmentBtn, caseType === c.key && styles.segmentActive]}
-                  >
-                    <Text style={[styles.segmentText, caseType === c.key && styles.segmentTextActive]}>
-                      {c.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
+            <FactorFPicker
+              testPrefix="casetype"
+              caseType={caseType}
+              onCaseType={(k) => {
+                setCaseType(k);
+                setResult(null);
+              }}
+              factorF={factorF}
+              onFactorF={(t) => {
+                setFactorF(t);
+                setResult(null);
+              }}
+              sheetFactor={sheetInfo?.factor || null}
+            />
           )}
 
           {cfg.hasMethod && (

@@ -8,7 +8,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -47,7 +48,7 @@ function fmtDate(iso: string) {
   return fmtDateMx(iso);
 }
 
-const CALC_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+const CALC_ICONS: Record<string, ComponentProps<typeof Ionicons>["name"]> = {
   volume: "flask-outline",
   lbm: "body-outline",
   concentration: "beaker-outline",

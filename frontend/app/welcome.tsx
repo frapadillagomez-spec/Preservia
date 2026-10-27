@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { ComponentRef, useRef, useState } from "react";
 import {
   Dimensions,
   NativeScrollEvent,
@@ -9,7 +9,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,7 +24,7 @@ const { width } = Dimensions.get("window");
 
 type Slide = {
   key: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: ComponentProps<typeof Ionicons>["name"];
   title: string;
   desc: string;
 };
@@ -51,7 +52,7 @@ const SLIDES: Slide[] = [
 
 export default function Welcome() {
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const [index, setIndex] = useState(0);
   const [box, setBox] = useState({ width, height: 0 });
 

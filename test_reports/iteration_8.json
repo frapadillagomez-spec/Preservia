@@ -1,0 +1,44 @@
+{
+  "summary": "Tested the Factor F (body conditions) feature and the single-form case sheet, backend and frontend. Backend: new test file tests/test_factor_f.py, 12/14 pass. Both failures have one cause: obesidad_moderada + diabetes_vascular gives F = 1.092, but the spec expects 1.093. 1.15*0.95 = 1.0924999... in floating point, which rounds down. The same thing happens in frontend factorF.ts (Math.round), so the UI also shows 1.092. Everything else works: dominant condition plus ±5%/±10% adjustment from the second condition, clamping to 0.75-1.35, rutinario as second condition giving no adjustment, volume with case_type=sheet and factor_f=1.2 giving 14.02 L, injection scaling by F, invalid factor_f returning 400, Normal/Ictericia/Edema unchanged, sheet condiciones persisting, and the PDF rows 'Condicion del cuerpo' and 'Factor de correccion F sugerido'. Frontend (375x667): /case/new shows the compact Hoja del caso (nombre/fecha ingreso/inicio/termino hidden). The live factor-f-value card updates (—, then 0.950, then 1.092). Creating a case saves the sheet with condiciones, nombre_difunto, fecha_ingreso, inicio_emb/termino_emb (Mexico time) and peso/altura. Reporte tab -> case-sheet-button -> /case/sheet shows the same checks and values. Editing a case (new?id=) loads the sheet and saves changes; anasarca + diabetes gives 0.880, which is correct. In /calculator/volume?caseId and /calculator/wizard?caseId, the Factor F option is preselected with the suggested F, and weight/height come from the sheet. An edited F of 1.2 gives 14.02 L, and saving to the case works. Wizard F=5 is silently clamped to x1.35. A case with no conditions has no Factor F option, and Normal/Ictericia/Edema work. Creating a case without filling the sheet still works. No deprecated Expo packages found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "compute_factor_f (server.py:311)", "issue": "Floating-point rounding: round(1.0924999..., 3) = 1.092, but the spec expects 1.093 for obesidad_moderada + diabetes_vascular. The PDF also shows 'F = 1.092'. Fix: round half up with Decimal, or round(f + 1e-9, 3)."},
+      {"endpoint": "PUT /api/cases/{id}/sheet", "issue": "Accepts any dict with no validation. Unknown condiciones keys are stored as-is; they are filtered out only when computing F and building the PDF."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "factorF.ts computeFactorF (line 57)", "issue": "Same rounding issue: Math.round(1.0924999*1000)/1000 = 1.092 instead of 1.093. Shown in factor-f-value, in the calculator prefill, and in saved calculations. Fix: Math.round(f*1000 + 1e-6)/1000, or a shared helper that rounds half up.", "testID": "factor-f-value", "priority": "MEDIUM"},
+      {"component": "FactorFPicker", "issue": "Out-of-range F (e.g. 5) is silently clamped to 1.35 by the backend, with no inline warning or validation in the UI.", "testID": "casetype-factor-input / wiz-casetype-factor-input", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Create case (new.tsx)", "issue": "Creation is two calls: POST /cases, then PUT /sheet. If the sheet PUT fails, the case already exists, an error toast shows, and the user stays on the form, so retrying creates a duplicate case. Consider sending the sheet in the POST, or navigating to the case after a partial failure.", "affected_testIDs": ["create-case-button"]}
+    ],
+    "design_issues": [
+      {"screen": "Case sheet / condition rows", "issues": ["cond-<key> rows have no accessibilityRole='checkbox' or accessibilityState={{checked}}; checked state is shown only by color and icon."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_factor_f.py", "/app/test_reports/pytest/pytest_factor_f.xml", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix rounding in compute_factor_f (server.py) and computeFactorF (factorF.ts) so obesidad_moderada + diabetes_vascular gives 1.093, e.g. Python round(f + 1e-9, 3) and JS Math.round(f*1000 + 1e-6)/1000. Then re-run tests/test_factor_f.py.",
+    "Optional: show inline validation or a clamp warning when Factor F input is outside 0.75-1.35.",
+    "Optional: make case creation atomic (POST /cases accepts case_sheet) to avoid duplicate cases if the sheet PUT fails.",
+    "Optional: add accessibilityRole/accessibilityState to condition checkbox rows.",
+    "Housekeeping: tests/test_pdf_publish.py and tests/test_preservia_api.py are obsolete since the app is no-auth (they need token_a/admin), giving 15 legacy failures. Update or remove them."
+  ],
+  "critical_code_review_comments": [
+    "Every new case always saves a sheet with fecha_ingreso and nombre_difunto, so the PDF 'Analisis del caso' section always appears, even when the user filled nothing in the sheet.",
+    "The sheet's inicio_emb/termino_emb store only HH:MM. For multi-day embalming, the date is lost in the sheet (it is still kept in case.embalming_start/end).",
+    "useCaseSheetInfo swallows fetch errors silently (catch(() => {})).",
+    "Frontend and backend copies of the BODY_CONDITIONS table are duplicated. Consider serving it from the backend to avoid drift."
+  ],
+  "updated_files": ["/app/backend/tests/test_factor_f.py"],
+  "success_rate": {"backend": "86% (12/14 new tests; both failures are the 1.092 vs 1.093 rounding bug)", "frontend": "95% (all flows work; only the rounding display issue)"},
+  "seed_data_creation": "Test cases created during the run (TEST_FactorF via pytest, TEST UI FactorF, TEST UI NoSheet) were deleted afterwards.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "No-auth app. Skip welcome via testID welcome-skip. new-case-fab -> /case/new. Condition rows: cond-<key>. Live F: factor-f-value. Calculator picker testIDs: casetype-sheet / casetype-factor-input / casetype-factor-card (wizard uses the wiz- prefix and the factor picker is on step 3, after wiz-next-0 and wiz-next-1). Injection exists only in the wizard (no /calculator/injection screen). Run: pytest /app/backend/tests/test_factor_f.py.",
+  "rca_of_issue": "1.15*(1-0.05) evaluates to 1.0924999999999998 in IEEE-754 doubles, so both Python round() and JS Math.round produce 1.092. Mitigation: add a small epsilon before rounding, or use Decimal with ROUND_HALF_UP."
+}

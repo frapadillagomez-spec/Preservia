@@ -2,7 +2,8 @@ import React, { createContext, useContext, useCallback, useRef, useState } from 
 import { StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 import * as Haptics from "expo-haptics";
 
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
@@ -13,7 +14,7 @@ type ToastCtx = { show: (msg: string, type?: ToastType) => void };
 const Ctx = createContext<ToastCtx>({ show: () => {} });
 export const useToast = () => useContext(Ctx);
 
-const ICONS: Record<ToastType, keyof typeof Ionicons.glyphMap> = {
+const ICONS: Record<ToastType, ComponentProps<typeof Ionicons>["name"]> = {
   success: "checkmark-circle",
   error: "alert-circle",
   info: "information-circle",

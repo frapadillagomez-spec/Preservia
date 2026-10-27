@@ -8,7 +8,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
@@ -27,17 +28,17 @@ type Cat = "ficha_tecnica" | "hoja_seguridad";
 type Sub = "arteriales" | "cavidades" | "co_pre_inyectores" | "miscelaneos";
 type LibFolder = "general" | "formacion_continua";
 
-const LIB_FOLDERS: { key: LibFolder; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const LIB_FOLDERS: { key: LibFolder; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
   { key: "general", label: "General", icon: "documents-outline" },
   { key: "formacion_continua", label: "Formación Continua", icon: "school-outline" },
 ];
 
-const CATS: { key: Cat; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const CATS: { key: Cat; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
   { key: "ficha_tecnica", label: "Fichas Técnicas", icon: "document-attach-outline" },
   { key: "hoja_seguridad", label: "Hojas de Seguridad", icon: "shield-checkmark-outline" },
 ];
 
-const SUBCATS: { key: Sub; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const SUBCATS: { key: Sub; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
   { key: "arteriales", label: "Arteriales", icon: "water-outline" },
   { key: "cavidades", label: "Cavidades", icon: "cube-outline" },
   { key: "co_pre_inyectores", label: "Co/Pre Inyectores", icon: "git-merge-outline" },

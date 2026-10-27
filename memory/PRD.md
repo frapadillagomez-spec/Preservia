@@ -36,3 +36,9 @@ Herramienta móvil profesional para embalsamadores/tanatopraxia que combina cál
 
 ## Notes / Mocks
 - Ningún API mockeado. Fotos y PDFs viven en MongoDB (base64) — respaldo en la nube funcional vía BD, no object storage externo.
+
+## Update (June 2026)
+- Hoja del caso now embedded in New/Edit case form (single form); shared component src/components/CaseSheetForm.tsx.
+- 24 body conditions (Factor de Corrección F) as checkboxes; F = dominant condition (max |F-1|) adjusted ±5%/±10% by second, clamped 0.75–1.35. Shown live, printed in PDF, suggested (editable) in volume calculator & wizard (case_type "sheet" + factor_f).
+- Expo SDK upgraded 54 -> 58 (RN 0.88, React 19.3); @expo/vector-icons replaced by @react-native-vector-icons/ionicons.
+- Backlog: Ayuda screen still mentions login; wizard deep-link back fallback; offline sync (P1); digital signatures (P2); PIN/biometric lock (P2).

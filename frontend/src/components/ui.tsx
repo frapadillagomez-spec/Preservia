@@ -10,7 +10,8 @@ import {
   ViewStyle,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
@@ -21,7 +22,7 @@ type BtnProps = {
   variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
   loading?: boolean;
   disabled?: boolean;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: ComponentProps<typeof Ionicons>["name"];
   testID?: string;
   style?: ViewStyle;
 };
@@ -86,7 +87,7 @@ export function Button({
 // ---------- Text field ----------
 type FieldProps = TextInputProps & {
   label?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: ComponentProps<typeof Ionicons>["name"];
   testID?: string;
 };
 

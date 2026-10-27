@@ -1,0 +1,30 @@
+{
+  "summary": "Full regression test after the Expo SDK 58 upgrade (expo 58.0.20, RN 0.88, React 19.3, expo-router 58.0.27, reanimated 4.7.1, gesture-handler 3.3.0, @react-native-vector-icons/ionicons 14.0.0), backend and frontend, at a 390x844 viewport. Backend: test_factor_f.py, test_case_sheet.py and test_no_auth_flow.py all pass, 35/35. The rounding fix works: obesidad_moderada + diabetes_vascular gives 1.093. Cases CRUD, status, calculations, notes, the /report PDF and stats are all fine. Frontend: the welcome carousel (Siguiente x3, Comenzar) and Saltar both reach the Casos tab. All 5 bottom tabs render with Ionicons glyphs (the Ionicons font is loaded; 34 glyph elements found, none blank). Note: the Estadísticas tab is labeled 'Historial'. /case/new: factor-f-value goes —, then 0.950, then 1.093. Creating a case runs POST /cases then PUT /sheet, then navigates to the case detail with 5 tabs (Cálculos/Notas/Bitácora/Docs/Reporte). Volume calculator: casetype-sheet is preselected with F 1.093, weight 80 is prefilled, the result is 14.59 L x1.093, and saving to the case works. Wizard: LBM 60.5 kg, then ratio, then wiz-casetype-sheet with F 1.093, volume computed and saved (LBM and injection calculations). Adding a note, adding a logbook entry, the attachment sheet (camera/gallery/PDF plus 3 labels) and the report preview viewer (PDF rendered with the Factor F rows) all work. Hoja del caso (/case/sheet) shows the saved condition with F 1.093 and peso 80. Edit case (new?id=) loads the saved data. Library: Referencia articles, Catálogo folders (4), Mis documentos folders (2), and opening/going back from a folder all work. No page errors or console errors/warnings. `expo install --check`: dependencies up to date. tsc --noEmit is clean. No deprecated Expo packages (expo-av, expo-barcode-scanner, expo-background-fetch) and no react-native SafeAreaView imports.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "calculator/wizard.tsx saveAll (line 146)", "issue": "router.back() after saving does nothing when the wizard is opened by direct deep link (no history). The user stays on the wizard after the 'guardado' toast. Consider falling back to router.replace(`/case/${caseId}`) when !router.canGoBack(). Does not happen with in-app navigation.", "testID": "wiz-save", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Ayuda", "issues": ["The quick guide step 1 still says 'Inicia sesión con tu correo o con Google', and the FAQ says 'Cada profesional accede únicamente a sus propios casos... ligado a tu cuenta'. The app is no-auth, so this copy is stale (pre-existing, not an SDK regression)."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_factor_f.py", "/app/backend/tests/test_case_sheet.py", "/app/backend/tests/test_no_auth_flow.py", "/app/test_reports/pytest/pytest_iter9.xml"],
+  "action_items": [
+    "Optional: in wizard.tsx (and similar modals), fall back to router.replace to the case when router.canGoBack() is false after saving.",
+    "Optional: update the Ayuda copy to remove the login/account references (no-auth app).",
+    "Housekeeping (carried over): delete the obsolete auth-based tests test_pdf_publish.py and test_preservia_api.py."
+  ],
+  "critical_code_review_comments": [
+    "use-icon-fonts.ts hard-codes IONICONS_VERSION='14.0.0'. It must be kept in sync with package.json manually; consider reading it from require('@react-native-vector-icons/ionicons/package.json').version.",
+    "The BODY_CONDITIONS table is still duplicated in the frontend (factorF.ts) and the backend (server.py). The rounding epsilon logic now matches on both sides."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100% of requested flows pass (1 low-priority deep-link back nav note)"},
+  "seed_data_creation": "Created case 'TEST SDK58 Case' (case_4ec4ffeb3a4b) via the UI and deleted it afterwards (GET returns 404).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "No-auth app. Use welcome-skip. The tabs are labeled Casos/Historial/Biblioteca/Ayuda/Perfil (stats route = 'Historial'). To open a case: search with cases-search-input, then case-card-<id>. Wizard: wiz-compute-lbm -> wiz-next-0 -> fill wiz-c2/wiz-c1/wiz-v1 -> wiz-next-1 -> wiz-compute-volume -> wiz-save. Report: tab-report -> preview-report-button opens /viewer?scope=report. Run: pytest tests/test_factor_f.py tests/test_case_sheet.py tests/test_no_auth_flow.py."
+}

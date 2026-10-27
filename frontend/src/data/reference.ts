@@ -1,11 +1,12 @@
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 
 export type RefSection = { heading?: string; body?: string; bullets?: string[] };
 export type RefTable = { columns: string[]; rows: string[][] };
 export type RefArticle = {
   id: string;
   title: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: ComponentProps<typeof Ionicons>["name"];
   summary: string;
   sections: RefSection[];
   table?: { title: string; data: RefTable };

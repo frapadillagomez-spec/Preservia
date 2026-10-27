@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -6,7 +6,7 @@ import {
   View,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -15,6 +15,8 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
+import { FactorFPicker, CaseType } from "@/src/components/FactorFPicker";
 
 const STEPS = ["Masa magra", "Dilución", "Volumen"];
 
@@ -44,12 +46,28 @@ export default function Wizard() {
   const [c1, setC1] = useState(""); // fluid index (stock)
   const [v1, setV1] = useState("473"); // concentrate volume mL (16 fl oz bottle)
   // step 3 - volume
-  const [caseType, setCaseType] = useState<"normal" | "jaundice" | "edema">("normal");
+  const [caseType, setCaseType] = useState<CaseType>("normal");
+  const [factorF, setFactorF] = useState("");
+  const sheetInfo = useCaseSheetInfo(caseId);
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
   const [busy3, setBusy3] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!sheetInfo) return;
+    if (sheetInfo.factor) {
+      setCaseType("sheet");
+      setFactorF(sheetInfo.factor.f.toFixed(3));
+    }
+    setWeight((w) => w || sheetInfo.weight);
+    setHeight((h) => h || sheetInfo.height);
+    if (sheetInfo.sex) setSex(sheetInfo.sex);
+  }, [sheetInfo]);
+
   const num = (s: string) => parseFloat((s || "").replace(",", "."));
+
+  const caseInputs = () =>
+    caseType === "sheet" ? { case_type: caseType, factor_f: num(factorF) } : { case_type: caseType };
 
   const ratio = useMemo(() => {
     const a = num(c2);
@@ -81,6 +99,10 @@ export default function Wizard() {
   };
 
   const computeVolume = async () => {
+    if (caseType === "sheet" && isNaN(num(factorF))) {
+      toast.show("Ingresa un Factor F válido", "error");
+      return;
+    }
     setBusy3(true);
     try {
       const resp = await api.post("/calculate", {
@@ -89,7 +111,7 @@ export default function Wizard() {
           weight_kg: num(weight),
           height_cm: num(height),
           sex,
-          case_type: caseType,
+          ...caseInputs(),
           desired_index_pct: num(c2),
           fluid_index_pct: num(c1),
           concentrate_ml: num(v1),
@@ -113,7 +135,7 @@ export default function Wizard() {
         type: "injection",
         inputs: {
           ...base,
-          case_type: caseType,
+          ...caseInputs(),
           desired_index_pct: num(c2),
           fluid_index_pct: num(c1),
           concentrate_ml: num(v1),
@@ -307,28 +329,20 @@ export default function Wizard() {
             <>
               <Text style={styles.stepTitle}>Paso 3 · Volumen de solución</Text>
               <Text style={styles.stepSub}>Resultado final: con V1 (concentrado) y C1·V1=C2·V2 se obtiene el volumen total V2.</Text>
-              <Text style={styles.selectorLabel}>Tipo de caso</Text>
-              <View style={styles.segment}>
-                {([
-                  { key: "normal", label: "Normal" },
-                  { key: "jaundice", label: "Ictericia" },
-                  { key: "edema", label: "Edema" },
-                ] as const).map((c) => (
-                  <Pressable
-                    key={c.key}
-                    testID={`wiz-casetype-${c.key}`}
-                    onPress={() => {
-                      setCaseType(c.key);
-                      setResult(null);
-                    }}
-                    style={[styles.segmentBtn, caseType === c.key && styles.segmentActive]}
-                  >
-                    <Text style={[styles.segmentText, caseType === c.key && styles.segmentTextActive]}>
-                      {c.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <FactorFPicker
+                testPrefix="wiz-casetype"
+                caseType={caseType}
+                onCaseType={(k) => {
+                  setCaseType(k);
+                  setResult(null);
+                }}
+                factorF={factorF}
+                onFactorF={(t) => {
+                  setFactorF(t);
+                  setResult(null);
+                }}
+                sheetFactor={sheetInfo?.factor || null}
+              />
               <Button
                 testID="wiz-compute-volume"
                 label="Calcular volumen"

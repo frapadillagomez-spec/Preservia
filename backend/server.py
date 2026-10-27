@@ -260,6 +260,65 @@ def compute_lbm(sex: str, weight_kg: float, height_cm: float, method: str = "ave
     return {"lbm": max(selected, 0.0), "method": method, "components": components}
 
 
+# ---- Factor de corrección F por condición del cuerpo ----
+# key -> (etiqueta, F min, F max, F promedio)
+BODY_CONDITIONS: Dict[str, Any] = {
+    "rutinario": ("Caso rutinario, vascularización conservada", 1.00, 1.00, 1.000),
+    "delgado": ("Adulto delgado, sin deshidratación", 0.95, 1.00, 0.975),
+    "obesidad_moderada": ("Obesidad moderada", 0.90, 1.00, 0.950),
+    "obesidad_severa": ("Obesidad severa o mórbida", 0.85, 0.95, 0.900),
+    "caquexia": ("Caquexia o emaciación", 0.90, 1.00, 0.950),
+    "deshidratacion_leve": ("Deshidratación leve", 1.00, 1.10, 1.050),
+    "deshidratacion_intensa": ("Deshidratación intensa o momificación parcial", 1.10, 1.20, 1.150),
+    "edema_localizado": ("Edema localizado", 0.90, 1.00, 0.950),
+    "edema_generalizado": ("Edema generalizado", 0.80, 0.90, 0.850),
+    "anasarca": ("Anasarca severa", 0.75, 0.85, 0.800),
+    "ascitis": ("Ascitis sin edema generalizado", 0.90, 1.00, 0.950),
+    "ictericia": ("Ictericia sin edema", 1.00, 1.10, 1.050),
+    "refrigeracion": ("Refrigeración prolongada", 1.05, 1.15, 1.100),
+    "intervalo_pm": ("Intervalo post mortem prolongado", 1.10, 1.25, 1.175),
+    "putrefaccion_inicial": ("Putrefacción inicial", 1.10, 1.20, 1.150),
+    "putrefaccion_avanzada": ("Putrefacción moderada o avanzada", 1.20, 1.35, 1.275),
+    "diabetes_vascular": ("Diabetes o enfermedad vascular periférica", 1.10, 1.20, 1.150),
+    "aterosclerosis": ("Aterosclerosis severa", 1.10, 1.25, 1.175),
+    "insuficiencia_edema": ("Insuficiencia renal o cardiaca con edema", 0.80, 0.95, 0.875),
+    "trauma_localizado": ("Trauma localizado", 1.00, 1.15, 1.075),
+    "trauma_multiple": ("Trauma múltiple o hemorragia extensa", 1.10, 1.25, 1.175),
+    "quemaduras": ("Quemaduras extensas", 1.10, 1.30, 1.200),
+    "autopsiado": ("Caso autopsiado", 1.15, 1.30, 1.225),
+    "donacion": ("Donación de órganos o tejidos", 1.10, 1.25, 1.175),
+}
+F_MIN, F_MAX = 0.75, 1.35
+
+
+def compute_factor_f(keys: List[str]) -> Optional[Dict[str, Any]]:
+    """Condición dominante (mayor efecto |F-1|) + ajuste de ±5% / ±10% por la segunda.
+    Resultado acotado a 0.75 <= F <= 1.35."""
+    order = list(BODY_CONDITIONS.keys())
+    sel = [k for k in (keys or []) if k in BODY_CONDITIONS]
+    if not sel:
+        return None
+    sel.sort(key=lambda k: (-abs(BODY_CONDITIONS[k][3] - 1.0), order.index(k)))
+    dom = sel[0]
+    f = BODY_CONDITIONS[dom][3]
+    adj_pct = 0
+    sec = sel[1] if len(sel) > 1 else None
+    if sec:
+        dev2 = BODY_CONDITIONS[sec][3] - 1.0
+        if abs(dev2) > 1e-9:
+            adj_pct = (5 if abs(dev2) <= 0.10 + 1e-9 else 10) * (1 if dev2 > 0 else -1)
+            f = f * (1 + adj_pct / 100.0)
+    f = round(min(max(f, F_MIN), F_MAX) + 1e-9, 3)
+    return {
+        "f": f,
+        "dominant": dom,
+        "dominant_label": BODY_CONDITIONS[dom][0],
+        "secondary": sec,
+        "secondary_label": BODY_CONDITIONS[sec][0] if sec else None,
+        "adjustment_pct": adj_pct,
+    }
+
+
 def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
     """Standard thanatopraxy formulas. Returns {results, summary}."""
     try:
@@ -283,7 +342,9 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 effective_kg = weight_kg
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
             factor = factors.get(case_type, 1.0)
-            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
+            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema", "sheet": "Factor F (hoja del caso)"}
+            if case_type == "sheet":
+                factor = round(min(max(float(inputs.get("factor_f", 1.0)), F_MIN), F_MAX), 3)
             effective_lb = effective_kg * 2.20462
             gallons = (effective_lb / 50.0) * factor
             liters = gallons * 3.78541
@@ -352,7 +413,9 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             lbm_method_label = LBM_METHOD_LABELS[lbm_info["method"]]
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
             factor = factors.get(case_type, 1.0)
-            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
+            labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema", "sheet": "Factor F (hoja del caso)"}
+            if case_type == "sheet":
+                factor = round(min(max(float(inputs.get("factor_f", 1.0)), F_MIN), F_MAX), 3)
             # C1·V1 = C2·V2  ->  V2 = C1·V1 / C2, adjusted by case-type factor
             base_total_ml = (c1 * concentrate_ml) / c2
             total_ml = base_total_ml * factor
@@ -903,10 +966,11 @@ INPUT_LABELS = {
     "total_solution_l": "Solucion total (L)",
     "method": "Metodo masa magra",
     "lbm_method": "Metodo masa magra",
+    "factor_f": "Factor de correccion F",
 }
 
 SEX_LABELS = {"male": "Masculino", "female": "Femenino"}
-CASE_TYPE_LABELS = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema"}
+CASE_TYPE_LABELS = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema", "sheet": "Factor F (hoja del caso)"}
 METHOD_LABELS = {
     "janmahasatian": "Janmahasatian",
     "boer": "Boer",
@@ -1073,6 +1137,17 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         addrow("Lesiones", sheet.get("caracteristicas_lesiones"))
         addrow("Otras caracteristicas", sheet.get("caracteristicas_otros"))
         addrow("Equipo medico", sel(sheet.get("equipo_medico"), SHEET_EQUIPO, sheet.get("equipo_medico_otros", "")))
+        conds = [k for k in (sheet.get("condiciones") or []) if k in BODY_CONDITIONS]
+        if conds:
+            addrow("Condicion del cuerpo", "\n".join(
+                f"{BODY_CONDITIONS[k][0]} (F {BODY_CONDITIONS[k][1]:.2f}-{BODY_CONDITIONS[k][2]:.2f}, prom. {BODY_CONDITIONS[k][3]:.3f})"
+                for k in conds))
+            ff = compute_factor_f(conds)
+            if ff:
+                txt = f"F = {ff['f']:.3f} - dominante: {ff['dominant_label']}"
+                if ff["secondary"]:
+                    txt += f"; ajuste {ff['adjustment_pct']:+d}% por: {ff['secondary_label']}"
+                addrow("Factor de correccion F sugerido", txt)
         addrow("Altura", sheet.get("altura"))
         addrow("Ancho", sheet.get("ancho"))
         addrow("Peso", sheet.get("peso"))

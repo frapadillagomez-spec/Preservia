@@ -14,7 +14,8 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@react-native-vector-icons/ionicons";
+import type { ComponentProps } from "react";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
@@ -46,7 +47,7 @@ type CaseData = {
   logbook?: LogEntry[];
 };
 
-const CALCULATORS: { type: string; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const CALCULATORS: { type: string; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
   { type: "volume", label: "Volumen de solución", icon: "flask-outline" },
   { type: "lbm", label: "Masa magra corporal", icon: "body-outline" },
   { type: "concentration", label: "Concentración / Dilución", icon: "beaker-outline" },
