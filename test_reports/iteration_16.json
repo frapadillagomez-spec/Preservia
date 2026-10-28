@@ -1,0 +1,32 @@
+{
+  "summary": "Retested all 7 fixes from iteration 15, and all pass. FIX1: Perfil is now a ScrollView. With the PIN on, the 'Cambiar PIN' row is clipped at the scroll boundary instead of overlapping the footer, and it scrolls fully into view above 'Preservia · v1.0.0'. FIX2: after 3 wrong PINs and a reload, the next wrong PIN shows '1 intento más'. The 5th wrong PIN starts the cooldown, and after a reload it still shows 'Espera 27 s.' with key presses blocked. FIX3: localStorage has only lock_pin_hash (SHA-256 hex) and lock_pin_salt (UUID); plain lock_pin is never written. Changing the PIN rotates both salt and hash, and disabling removes both. Enable, unlock, change (wrong current PIN rejected, old PIN rejected afterwards, new PIN unlocks) and disable all work. FIX4: when the cooldown ends, pin-error is blank, the next wrong PIN shows '4 intentos más', and the correct PIN unlocks. FIX5: deleting the last catalog item in Editar mode hides the toggle and resets manage. The next saved item appears as an add chip ('Editar' label, 'Catálogo · toca para agregar'), and tapping it adds the co-injector without deleting it from the catalog. FIX6: volume_ml above 20000 (20000.1, 20001, 1e9) returns 400; exactly 20000 is accepted. FIX7: /api/stats calc_breakdown returns 5 types in order, and Historial 'Cálculos por tipo' shows all 5 with icons (speedometer for K, git-merge for the assistant). Backend: 111/111 pass, excluding the obsolete test_pdf_publish.py and test_preservia_api.py. PIN left DISABLED; TEST_ cases and catalog items cleaned up.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "LockGate (cooldown)", "issues": ["During the 30 s cooldown the keypad still looks enabled (no dimming). Only the red text shows it is blocked."]},
+      {"screen": "Perfil", "issues": ["At 375x667 with the PIN on, the 'Cambiar PIN' row is cut off at the bottom and showsVerticalScrollIndicator={false}, so it is not obvious the screen scrolls. Consider showing the indicator or reducing the top padding."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter16_fixes.py", "/app/test_reports/pytest/iter16.xml", "/app/test_reports/pytest/iter16_full.xml"],
+  "action_items": [
+    "MEDIUM (migration): Users who turned on the PIN before this build have lock_enabled=true and a plain 'lock_pin' but no lock_pin_hash, so checkPin always returns false and they are locked out permanently. Fix: in checkPin/lockNow, if a legacy 'lock_pin' exists, compare it, then migrate to the salted hash and delete 'lock_pin'.",
+    "LOW (security): tries is reset to 0 when the cooldown starts, so an attacker gets 5 tries every 30 s (all 10k PINs in about 17 h). Consider an escalating cooldown (30 s, 1 min, 5 min...) or persisting a total failure count.",
+    "LOW (security): the PinFlow verify step in Perfil (change/disable) has no attempt limit or cooldown.",
+    "LOW: dim or disable the PinPad keys visually during the cooldown."
+  ],
+  "critical_code_review_comments": [
+    "LockGate cooldown effect calls setError inside the setCooldown updater function (a side effect inside an updater). It works, but it is cleaner to clear the error in an effect when cooldown === 0.",
+    "The cooldown uses Date.now(), so changing the device clock bypasses it. This is acceptable for a local PIN.",
+    "lock_cooldown_until stays in storage after it expires (harmless)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter16_fixes.py (new)", "/app/backend/tests/test_no_auth_flow.py (updated calc_breakdown assertion to the 5 types, as expected after FIX7)"],
+  "success_rate": {"backend": "100% (6/6 new tests; 111/111 regression, excluding obsolete files)", "frontend": "100% of requested fixes verified"},
+  "seed_data_creation": "Created case TEST_iter16_wiz and catalog items TEST_A16, TEST_B16, TEST_edge, all deleted afterwards. The catalog is empty, no TEST cases remain, and the PIN lock is disabled.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Env var: EXPO_PUBLIC_BACKEND_URL. Go directly to /profile, /stats, or /calculator/wizard?caseId=X (no need to skip the welcome screen). The PinFlow modal slides in, so wait about 1.2 s after [data-testid=pin-flow] appears before tapping keys, and use '[data-testid=pin-key-N] >> visible=true' with .last. localStorage keys: lock_enabled, lock_pin_hash, lock_pin_salt, lock_tries, lock_cooldown_until, lock_bio. test_pdf_publish.py and test_preservia_api.py are obsolete.",
+  "rca_of_issue": "No new bugs. The only new risk is the missing migration from legacy plain 'lock_pin' to the hash, found by code review: lockSettings.checkPin reads only lock_pin_hash."
+}

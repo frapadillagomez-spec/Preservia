@@ -12,7 +12,8 @@
       "bundleIdentifier": "com.emergent.preserviacases.ime75s",
       "infoPlist": {
         "NSCameraUsageDescription": "Escanea documentos del caso con la cámara",
-        "NSPhotoLibraryUsageDescription": "Adjunta documentos del caso desde tu galería"
+        "NSPhotoLibraryUsageDescription": "Adjunta documentos del caso desde tu galería",
+        "NSFaceIDUsageDescription": "Desbloquea Preservia con Face ID"
       }
     },
     "android": {
@@ -44,6 +45,12 @@
       ],
       "expo-font",
       "expo-image",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Desbloquea Preservia con Face ID"
+        }
+      ],
       "expo-secure-store",
       "expo-sharing",
       "expo-status-bar",

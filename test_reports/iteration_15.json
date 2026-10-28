@@ -1,0 +1,44 @@
+{
+  "summary": "Tested all 4 new features. Co-injector catalog: the backend CRUD, case-insensitive upsert and 400/404 handling all pass. In wizard step 3, saving to the catalog (checkbox on by default), the 'don't save' option, adding by tapping a chip, and the Editar/Listo mode with delete all work. PDF 'Resumen K y F': all 3 cases pass (case with a kf calc and co-injectors, case without K/F, case with K/F but no calc). /api/stats factors and the Historial UI pass, including all empty states. PIN lock passes end to end on web: enable, mismatch, cancel, lock on reload, remaining-attempt countdown, 5 wrong tries -> 30 s cooldown, unlock, change PIN, disable, and the biometrics toggle disabled on web. 21/21 new backend tests pass. Issues found: 1 layout overlap on Perfil, 1 stale message after the cooldown, 1 catalog edit-mode state bug, and 2 security hardening items. No deprecated Expo packages found. PIN left DISABLED; TEST_ cases and catalog items cleaned up.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/coinjectors", "issue": "No upper bound on volume_ml (e.g. 1e9 is accepted) and the payload is a raw Dict rather than a Pydantic model."},
+      {"endpoint": "GET /api/stats", "issue": "Pre-existing: calc_breakdown lists only volume/lbm/concentration. Saved 'injection' (wizard) calcs count in the Cálculos total but never show in 'Cálculos por tipo'."},
+      {"endpoint": "tests/test_pdf_publish.py", "issue": "Carry-over: an outdated test uses subcategory values that no longer exist, so it fails with 400 'Subcategoria invalida'. This is the test's fault, not a regression."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Perfil screen (app/(tabs)/profile.tsx)", "issue": "With the PIN on, the lock-settings card gets taller (adds the biometrics row and 'Cambiar PIN'). The body is a fixed flex:1 View with no ScrollView, so the 'Cambiar PIN' row overlaps the 'Preservia · v1.0.0' footer at 375x667. On smaller screens content will be cut off.", "testID": "lock-change", "priority": "MEDIUM"},
+      {"component": "LockGate", "issue": "When the 30 s cooldown ends, pin-error still reads 'Demasiados intentos. Espera 30 s.'. The `error` state set at the start of the cooldown is never cleared. Unlocking still works.", "testID": "pin-error", "priority": "LOW"},
+      {"component": "CoInjectors catalog", "issue": "If you delete the last catalog item while in Editar mode, `manage` stays true even though the header and button are hidden. The next item saved to the catalog then shows up in delete mode, so tapping it deletes it instead of adding it. Reset manage when the catalog becomes empty.", "testID": "coinj-manage", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Wizard step 3", "issues": ["Catalog chips and items already added look almost the same (same white card and text). Consider a visually different chip style.", "Deleting from the catalog has no confirmation and no undo."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_catalog_stats_pdf.py", "/app/backend/tests/test_coinjectors.py", "/app/test_reports/pytest/iter15.xml"],
+  "action_items": [
+    "MEDIUM: Wrap the Perfil body in a ScrollView so the expanded lock-settings card doesn't overlap the version footer.",
+    "MEDIUM (security): The failed-attempt counter and cooldown live only in component state. Reloading or restarting the app resets them, which allows unlimited brute force (5 tries per restart). Persist tries and a cooldown-until timestamp in storage.",
+    "LOW (security): The PIN is stored in plain text (on web, localStorage 'lock_pin'). Consider storing a salted hash.",
+    "LOW: Clear the LockGate error when the cooldown reaches 0.",
+    "LOW: In CoInjectors, reset manage=false when the catalog becomes empty.",
+    "LOW: Add an upper bound on volume_ml in POST /api/coinjectors.",
+    "LOW (carry-over): Update or remove the outdated test_pdf_publish.py and test_preservia_api.py."
+  ],
+  "critical_code_review_comments": [
+    "LockGate renders the children under the overlay, so on web the protected screens are still in the DOM. This is acceptable on native.",
+    "CoInjectors swallows errors from the save-to-catalog POST silently, so the user gets no feedback if the save fails (e.g. offline)."
+  ],
+  "updated_files": ["/app/backend/tests/test_catalog_stats_pdf.py (new)"],
+  "success_rate": {"backend": "100% (21/21 new + co-injector tests); full suite fails only in the known-outdated test_pdf_publish.py", "frontend": "~94% (all flows work; 1 layout overlap, 2 minor state bugs)"},
+  "seed_data_creation": "Created a TEST_iter15_wiz case and a TEST_Humectante catalog item. Both deleted afterwards; the catalog is empty.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Env var is EXPO_PUBLIC_BACKEND_URL. Each browser_automation run gets fresh localStorage, so the PIN must be enabled within the same run. PinPad testIDs: pin-key-0..9, pin-back, pin-dots, pin-error (always rendered, text ' ' when empty). Biometrics can't be tested on web. Wizard setup: python iter13_setup.py create NAME obesidad_moderada,diabetes_vascular.",
+  "rca_of_issue": "Profile overlap: profile.tsx body is a flex:1 View with no ScrollView. Stale cooldown text: LockGate sets error at the start of the cooldown and the display falls back to `error` once cooldown is 0. Manage-mode bug: CoInjectors keeps `manage` state while catalog.length === 0 hides its toggle."
+}

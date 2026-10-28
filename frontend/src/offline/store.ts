@@ -76,7 +76,7 @@ export async function mapId(localId: string, realId: string) {
 }
 
 // ---------- caché ----------
-const CACHEABLE = [/^\/cases$/, /^\/cases\/[^/]+$/, /^\/cases\/[^/]+\/attachments$/, /^\/catalog\/documents$/, /^\/library\/documents$/, /^\/stats$/];
+const CACHEABLE = [/^\/cases$/, /^\/cases\/[^/]+$/, /^\/cases\/[^/]+\/attachments$/, /^\/catalog\/documents$/, /^\/library\/documents$/, /^\/stats$/, /^\/coinjectors$/];
 export const isCacheable = (path: string) => CACHEABLE.some((re) => re.test(path));
 
 export async function cacheSet(path: string, data: any) {

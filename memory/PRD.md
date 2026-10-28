@@ -46,4 +46,5 @@ Herramienta móvil profesional para embalsamadores/tanatopraxia que combina cál
 - Done: Factor K (condición general, L/kg) single-select in Hoja del caso; new calculator "kvolume" V = K × masa magra × F; injection recommended_l uses K when sheet has it; PDF row.
 - Done: "Resumen K y F" card at top of Cálculos tab (GET /api/cases/{id} returns kf_summary: K, F, LBM from last saved calc or sheet peso/altura+sex, volume = K×MM×F).
 - Done: Offline mode (src/offline: AsyncStorage cache + queue + auto sync + per-case conflict modal, local formulas). Wizard step 3: Vtotal = MM × K × F (sheet), V1 = C2·Vtotal/C1, co-injectors (name, reason, volume) subtracted → water for pump.
+- Done: Co-injector catalog (/api/coinjectors), PDF "Resumen K y F" (Vtotal, V1, co-inyectores, agua), Historial factors (K/F avg, top conditions, top co-injectors), PIN lock (expo-local-authentication, salted SHA-256 PIN, persistent attempts + escalating cooldown, relock after 60 s in background).
 - Backlog: PIN/biometric lock (P2).

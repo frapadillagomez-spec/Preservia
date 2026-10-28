@@ -17,6 +17,7 @@ import { api } from "@/src/api";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateMx } from "@/src/utils/mxtime";
 import { BrandBar } from "@/src/components/BrandLogo";
+import { FactorsSection } from "@/src/components/FactorsSection";
 
 type Totals = {
   cases: number;
@@ -42,6 +43,16 @@ type Stats = {
   monthly: Monthly[];
   calc_breakdown: CalcBreak[];
   recent_cases: RecentCase[];
+  factors?: FactorStats;
+};
+type FactorStats = {
+  k_avg: number | null;
+  f_avg: number | null;
+  k_cases: number;
+  f_cases: number;
+  top_general: { label: string; count: number }[];
+  top_conditions: { label: string; count: number }[];
+  top_coinjectors: { name: string; count: number; avg_ml: number }[];
 };
 
 function fmtDate(iso: string) {
@@ -51,6 +62,7 @@ function fmtDate(iso: string) {
 const CALC_ICONS: Record<string, ComponentProps<typeof Ionicons>["name"]> = {
   volume: "flask-outline",
   kvolume: "speedometer-outline",
+  injection: "git-merge-outline",
   lbm: "body-outline",
   concentration: "beaker-outline",
 };
@@ -196,6 +208,8 @@ export default function StatsScreen() {
             </View>
           ))}
         </View>
+
+        {stats.factors && <FactorsSection f={stats.factors} />}
 
         {/* Recent activity */}
         <Text style={styles.sectionLabel}>Actividad reciente</Text>

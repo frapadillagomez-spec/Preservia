@@ -1001,6 +1001,7 @@ CALC_TYPE_LABELS = {
     "lbm": "Masa magra corporal",
     "concentration": "Concentración / Dilución",
     "kvolume": "Volumen por Factor K",
+    "injection": "Volumen de inyección (asistente)",
 }
 
 
@@ -1023,7 +1024,7 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
     active_cases = 0
     archived_cases = 0
     total_calcs = 0
-    calc_by_type: Dict[str, int] = {"volume": 0, "lbm": 0, "concentration": 0, "kvolume": 0}
+    calc_by_type: Dict[str, int] = {"volume": 0, "lbm": 0, "concentration": 0, "kvolume": 0, "injection": 0}
     cases_last_30 = 0
 
     # Last 6 months buckets (oldest -> newest)
@@ -1077,8 +1078,52 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
 
     calc_breakdown = [
         {"type": t, "label": CALC_TYPE_LABELS[t], "count": calc_by_type[t]}
-        for t in ["volume", "lbm", "concentration"]
+        for t in ["volume", "kvolume", "lbm", "concentration", "injection"]
     ]
+
+    # ---- Factores K / F y co-inyectores ----
+    k_vals: List[float] = []
+    f_vals: List[float] = []
+    cond_count: Dict[str, int] = {}
+    gen_count: Dict[str, int] = {}
+    co_stats: Dict[str, Dict[str, Any]] = {}
+    for c in cases:
+        sh = c.get("case_sheet") or {}
+        g = GENERAL_CONDITIONS.get(sh.get("condicion_general") or "")
+        if g:
+            k_vals.append(g[3])
+            gen_count[g[0]] = gen_count.get(g[0], 0) + 1
+        ff = compute_factor_f(sh.get("condiciones") or [])
+        if ff:
+            f_vals.append(ff["f"])
+        for k in sh.get("condiciones") or []:
+            if k in BODY_CONDITIONS:
+                lbl = BODY_CONDITIONS[k][0]
+                cond_count[lbl] = cond_count.get(lbl, 0) + 1
+        for calc in c.get("calculations", []):
+            for co in (calc.get("results") or {}).get("coinjectors") or []:
+                if not isinstance(co, dict) or not co.get("name"):
+                    continue
+                key = str(co["name"]).strip().lower()
+                s = co_stats.setdefault(key, {"name": str(co["name"]).strip(), "count": 0, "total_ml": 0.0})
+                s["count"] += 1
+                s["total_ml"] += float(co.get("volume_ml") or 0)
+
+    def top(d: Dict[str, int], n: int = 5):
+        return [{"label": k, "count": v} for k, v in sorted(d.items(), key=lambda x: -x[1])[:n]]
+
+    factors = {
+        "k_avg": round(sum(k_vals) / len(k_vals), 3) if k_vals else None,
+        "f_avg": round(sum(f_vals) / len(f_vals), 3) if f_vals else None,
+        "k_cases": len(k_vals),
+        "f_cases": len(f_vals),
+        "top_general": top(gen_count, 3),
+        "top_conditions": top(cond_count),
+        "top_coinjectors": [
+            {"name": s["name"], "count": s["count"], "avg_ml": round(s["total_ml"] / s["count"], 0)}
+            for s in sorted(co_stats.values(), key=lambda x: -x["count"])[:5]
+        ],
+    }
 
     return {
         "totals": {
@@ -1092,7 +1137,47 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
         "monthly": months,
         "calc_breakdown": calc_breakdown,
         "recent_cases": recent_out,
+        "factors": factors,
     }
+
+
+# ---------- Catálogo de co-inyectores ----------
+@api_router.get("/coinjectors")
+async def list_coinjectors(user: Dict[str, Any] = Depends(get_current_user)):
+    items = await db.coinjector_catalog.find({"user_id": user["user_id"]}, {"_id": 0}).sort("name", 1).to_list(200)
+    return {"items": items}
+
+
+@api_router.post("/coinjectors")
+async def add_coinjector(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    name = str(payload.get("name") or "").strip()[:80]
+    reason = str(payload.get("reason") or "").strip()[:160]
+    try:
+        vol = float(payload.get("volume_ml") or 0)
+    except (TypeError, ValueError):
+        vol = 0
+    if not name or vol <= 0 or vol > 20000:
+        raise HTTPException(status_code=400, detail="El co-inyector necesita nombre y un volumen entre 0 y 20000 mL")
+    existing = await db.coinjector_catalog.find_one(
+        {"user_id": user["user_id"], "name_key": name.lower()}, {"_id": 0})
+    doc = {"name": name, "name_key": name.lower(), "reason": reason, "volume_ml": round(vol, 1),
+           "updated_at": datetime.now(timezone.utc).isoformat()}
+    if existing:
+        await db.coinjector_catalog.update_one({"item_id": existing["item_id"]}, {"$set": doc})
+        item = {**existing, **doc}
+    else:
+        item = {"item_id": f"coi_{uuid.uuid4().hex[:12]}", "user_id": user["user_id"], **doc}
+        await db.coinjector_catalog.insert_one(dict(item))
+    item.pop("_id", None)
+    return {"item": item}
+
+
+@api_router.delete("/coinjectors/{item_id}")
+async def delete_coinjector(item_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    res = await db.coinjector_catalog.delete_one({"item_id": item_id, "user_id": user["user_id"]})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Co-inyector no encontrado")
+    return {"ok": True}
 
 
 # ----------------------------- PDF Report -----------------------------
@@ -1399,6 +1484,50 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ]))
             elems.append(sig_tbl)
+
+    # ---- Resumen K y F ----
+    kf = case_kf_summary(case)
+    inj = next((c for c in reversed(case.get("calculations") or [])
+                if c.get("type") == "injection" and (c.get("inputs") or {}).get("mode") == "kf"), None)
+    if kf.get("k") or kf.get("f") or inj:
+        elems.append(Paragraph("Resumen K y F", h2))
+        krows = []
+
+        def kadd(label: str, val: str):
+            krows.append([Paragraph(esc(label), cell_label), Paragraph(esc(val), cell_val)])
+
+        if kf.get("k"):
+            kadd("Factor K", f"{kf['k']['value']:.3f} L/kg - {kf['k']['label']}")
+        f_txt = f"{kf['f_applied']:.3f}"
+        if kf.get("f"):
+            f_txt += f" - {kf['f']['dominant_label']}"
+            if kf["f"].get("secondary_label"):
+                f_txt += f" ({kf['f']['adjustment_pct']:+d}% {kf['f']['secondary_label']})"
+        kadd("Factor F", f_txt)
+        if kf.get("lbm"):
+            kadd("Masa magra", f"{kf['lbm']['kg']:.1f} kg ({kf['lbm']['method']}; {kf['lbm']['source']})")
+        if inj:
+            r = inj.get("results") or {}
+            kadd("Volumen total (Vtotal = MM x K x F)",
+                 f"{r.get('total_l')} L = {r.get('lbm_kg')} kg x {r.get('k_factor')} L/kg x {r.get('factor_f')}")
+            kadd("Concentrado V1 (C2 x Vtotal / C1)",
+                 f"{r.get('concentrate_ml')} mL (C1 {r.get('fluid_index_pct')}% -> C2 {r.get('desired_index_pct')}%)")
+            co = r.get("coinjectors") or []
+            kadd("Co-inyectores", "\n".join(
+                f"{c.get('name')} - {c.get('reason')}: {c.get('volume_ml')} mL" for c in co
+            ) + f"\nTotal: {r.get('coinjectors_ml', 0)} mL" if co else "Ninguno")
+            kadd("Agua a agregar en la bomba", f"{r.get('water_ml')} mL (Vtotal - V1 - co-inyectores)")
+        elif kf.get("volume_l") is not None:
+            kadd("Volumen recomendado (MM x K x F)", f"{kf['volume_l']:.2f} L")
+        kt = Table(krows, colWidths=[55 * mm, 110 * mm])
+        kt.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+        ]))
+        elems.append(kt)
 
     elems.append(Paragraph("Calculos tecnicos", h2))
     calcs = case.get("calculations", [])

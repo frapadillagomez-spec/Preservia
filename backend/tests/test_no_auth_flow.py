@@ -190,9 +190,9 @@ def test_stats_no_auth(s):
     # monthly: 6 buckets
     assert isinstance(d["monthly"], list) and len(d["monthly"]) == 6
     assert all({"key", "label", "count"} <= set(m.keys()) for m in d["monthly"])
-    # calc_breakdown 3 items
+    # calc_breakdown 5 items (kvolume + injection added in iter16)
     types = {c["type"] for c in d["calc_breakdown"]}
-    assert types == {"volume", "lbm", "concentration"}
+    assert types == {"volume", "kvolume", "lbm", "concentration", "injection"}
     # recent contains our case
     assert any(rc["case_id"] == state["case_id"] for rc in d["recent_cases"])
 

@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@react-native-vector-icons/ionicons";
 
+import { api } from "@/src/api";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
 export type CoInjector = { name: string; reason: string; volume_ml: number };
+type CatalogItem = CoInjector & { item_id: string };
 
 const OZ_ML = 29.5735;
 
@@ -18,6 +20,22 @@ export function CoInjectors({ items, onChange }: Props) {
   const [vol, setVol] = useState("");
   const [unit, setUnit] = useState<"ml" | "oz">("ml");
   const [err, setErr] = useState("");
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [saveToCatalog, setSaveToCatalog] = useState(true);
+  const [manage, setManage] = useState(false);
+
+  const loadCatalog = useCallback(() => {
+    api
+      .get<{ items: CatalogItem[] }>("/coinjectors")
+      .then((r) => {
+        setCatalog(r.items || []);
+        if (!r.items?.length) setManage(false);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
 
   const add = () => {
     const v = parseFloat(vol.replace(",", "."));
@@ -25,10 +43,23 @@ export function CoInjectors({ items, onChange }: Props) {
     if (!reason.trim()) return setErr("Escribe la razón de uso");
     if (isNaN(v) || v <= 0) return setErr("Ingresa un volumen mayor que 0");
     setErr("");
-    onChange([...items, { name: name.trim(), reason: reason.trim(), volume_ml: Math.round((unit === "oz" ? v * OZ_ML : v) * 10) / 10 }]);
+    const item = { name: name.trim(), reason: reason.trim(), volume_ml: Math.round((unit === "oz" ? v * OZ_ML : v) * 10) / 10 };
+    onChange([...items, item]);
+    if (saveToCatalog) api.post("/coinjectors", item).then(loadCatalog).catch(() => {});
     setName("");
     setReason("");
     setVol("");
+  };
+
+  const pick = (c: CatalogItem) => {
+    if (manage) {
+      api
+        .del(`/coinjectors/${c.item_id}`)
+        .then(loadCatalog)
+        .catch((e: any) => setErr(e?.detail || "No se pudo eliminar del catálogo"));
+      return;
+    }
+    onChange([...items, { name: c.name, reason: c.reason, volume_ml: c.volume_ml }]);
   };
 
   const total = items.reduce((s, i) => s + i.volume_ml, 0);
@@ -38,6 +69,32 @@ export function CoInjectors({ items, onChange }: Props) {
       <Text style={styles.title}>Co-inyectores</Text>
       <Text style={styles.hint}>Su volumen se resta del volumen total para obtener el agua a agregar en la bomba.</Text>
 
+      {catalog.length > 0 && (
+        <View style={{ marginBottom: spacing.md }}>
+          <View style={styles.catHead}>
+            <Text style={styles.catTitle}>{manage ? "Toca para quitar del catálogo" : "Catálogo · toca para agregar"}</Text>
+            <Pressable testID="coinj-manage" onPress={() => setManage((m) => !m)} hitSlop={12} style={styles.manageBtn}>
+              <Text style={styles.manageText}>{manage ? "Listo" : "Editar"}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.chips}>
+            {catalog.map((c) => (
+              <Pressable
+                key={c.item_id}
+                testID={`coinj-cat-${c.item_id}`}
+                onPress={() => pick(c)}
+                style={[styles.catChip, manage && styles.catChipManage]}
+              >
+                <Ionicons name={manage ? "close-circle" : "add-circle-outline"} size={16} color={manage ? colors.error : colors.onSurfaceSecondary} />
+                <View>
+                  <Text style={styles.catName}>{c.name} · {c.volume_ml} mL</Text>
+                  {!!c.reason && <Text style={styles.catReason} numberOfLines={1}>{c.reason}</Text>}
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
       {items.map((c, i) => (
         <View key={`${c.name}-${i}`} testID={`coinj-item-${i}`} style={styles.item}>
           <View style={{ flex: 1 }}>
@@ -68,6 +125,10 @@ export function CoInjectors({ items, onChange }: Props) {
         </View>
       </View>
       {!!err && <Text testID="coinj-error" style={styles.err}>{err}</Text>}
+      <Pressable testID="coinj-save-catalog" onPress={() => setSaveToCatalog((s) => !s)} style={styles.saveRow}>
+        <Ionicons name={saveToCatalog ? "checkbox" : "square-outline"} size={20} color={saveToCatalog ? colors.onSurface : colors.onSurfaceTertiary} />
+        <Text style={styles.saveText}>Guardar en mi catálogo de co-inyectores</Text>
+      </Pressable>
       <Button testID="coinj-add" label="Agregar co-inyector" variant="outline" icon="add" onPress={add} />
     </View>
   );
@@ -89,4 +150,26 @@ const styles = StyleSheet.create({
   unitText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
   unitTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   err: { color: colors.error, fontFamily: font.medium, fontSize: fontSize.sm, marginBottom: spacing.sm },
+  catHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xs },
+  catTitle: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  manageBtn: { minHeight: 44, minWidth: 44, alignItems: "flex-end", justifyContent: "center" },
+  manageText: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
+  chips: { gap: spacing.sm },
+  catChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  catChipManage: { borderColor: colors.error },
+  catName: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
+  catReason: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm },
+  saveRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 44, marginBottom: spacing.sm },
+  saveText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm, flex: 1 },
 });

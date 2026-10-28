@@ -1,9 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar, BrandLogo } from "@/src/components/BrandLogo";
+import { LockSettingsCard } from "@/src/components/LockSettingsCard";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
@@ -15,7 +16,7 @@ export default function Profile() {
         <Text style={styles.title}>Perfil</Text>
       </View>
 
-      <View style={styles.body}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.body}>
         <View style={styles.logoWrap}>
           <BrandLogo height={36} />
         </View>
@@ -34,7 +35,9 @@ export default function Profile() {
             La app funciona sin necesidad de crear una cuenta.
           </Text>
         </View>
-      </View>
+
+        <LockSettingsCard />
+      </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>
         <Text style={styles.version}>Preservia · v1.0.0</Text>
@@ -47,7 +50,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
   title: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xxxl },
-  body: { flex: 1, alignItems: "center", paddingTop: spacing.xxl, paddingHorizontal: spacing.xl },
+  body: { alignItems: "center", paddingTop: spacing.xxl, paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
   logoWrap: { marginBottom: spacing.md },
   tagline: {
     color: colors.onSurfaceSecondary,
