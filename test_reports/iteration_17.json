@@ -1,0 +1,39 @@
+{
+  "summary": "Tested 3 new features plus regressions. Backend: 22/22 pytest pass (new test_iter17_fluids_photos_backup.py, test_coinjectors.py, test_injection_kf.py). Fluids: CRUD works, case-insensitive name upsert works, 400 on empty name or index <=0, >100 or non-numeric, 404 on deleting an unknown id. Photos: kind=photo with stage antes/despues (case-insensitive) is accepted; a bad or missing stage returns 400; labels are set automatically; the PDF has 'Fotografias del caso' with 'Antes del tratamiento' before 'Despues del tratamiento', numbered captions, 2 per row, and no full-page photo attachments. Backup: export shape is correct; restore skips existing cases, imports others with sheet, logbook, notes, calcs and original case_number, and upserts catalogs; an invalid payload returns 400. Frontend at 375x667: in the wizard, saving a fluid template with empty C1 shows fluid-error, saving with C1 creates a chip, tapping a chip sets wiz-c1=25 and adds the fluid name to the label, edit mode deletes on tap, KF still gives 8.93 L, and the saved injection inputs include fluid_name (PDF shows 'Fluido arterial'). Case sheet photos: gallery upload through the file chooser for antes x2 and despues x1 showed numbered thumbnails, and remove works. The Docs tab does not list photos. Perfil backup-export downloaded Preservia_respaldo_YYYY-MM-DD.json with toast 'Respaldo listo: 10 caso(s)'. backup-restore showed 'Restaurados 1 caso(s)', then 'Restaurados 0 caso(s), 1 ya existían' on re-run, and 'Archivo de respaldo inválido' for a wrong-shape file and for a non-JSON file. Casos tab JSON import regression OK. No deprecated packages found (expo-av, expo-barcode-scanner, expo-background-fetch).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/cases/{case_id}", "issue": "Deletes the case and its notes but NOT its attachments or GridFS files. Before/after photos and scanned docs stay orphaned: GET /api/attachments/{att_id} still returns 200 after the case is deleted. This is more important now that photos are added often."},
+      {"endpoint": "GET /api/fluids", "issue": "Returns internal fields user_id and name_key (backup strips them, list does not)."},
+      {"endpoint": "GET /api/cases/{id}/attachments + report", "issue": "Hard limit .to_list(50) on attachments. Photos and docs share it, so a case with many photos silently drops items from the list and from the PDF."},
+      {"endpoint": "POST /api/backup/restore", "issue": "Duplicate cases inside the same payload are not added to existing_refs, so a file with the same case twice imports it twice. The backup also excludes note photos and attachments (this is documented in the UI)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Wizard step 2 (FluidTemplates)", "issues": ["In edit mode a single tap deletes the fluid with no confirmation or undo.", "'Guardar el C1 actual como plantilla' sits above the C1 input, so users tap it before entering C1 and get an error. Consider putting it below wiz-c1."]},
+      {"screen": "Hoja del caso photos (CasePhotos)", "issues": ["photo-remove-* deletes immediately with no confirmation.", "Thumbnails load the full-size image of each photo (GET /attachments/{id} base64) one by one. This could be heavy for many photos."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter17_fluids_photos_backup.py", "/app/test_reports/pytest/pytest_iter17.xml"],
+  "action_items": [
+    "delete_case: also delete db.attachments for the case and their GridFS files (await delete_pdf(a) for each).",
+    "Optional: strip user_id and name_key from the GET /api/fluids response; raise or remove the 50-attachment limit; dedupe cases within the restore payload.",
+    "Optional UX: add confirmation before deleting a fluid template or photo; move the fluid save link below the C1 field.",
+    "DRY: (tabs)/index.tsx importCase duplicates pickJsonFile from src/utils/files.ts."
+  ],
+  "critical_code_review_comments": [
+    "CasePhotos.load uses a stale 'thumbs' closure (deps [caseId] only), so already-loaded thumbnails may be fetched again after each add. Harmless but wasteful.",
+    "CasePhotos.add shows the 'Foto agregada' toast even if no asset had base64 data."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter17_fluids_photos_backup.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Only TEST_ cases and fluids were created, and all were cleaned up (cases, attachments, fluids). The real 'Arterial 25' fluid and the user's cases were left untouched. Restore was run only with TEST_ payloads.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Env var: EXPO_PUBLIC_BACKEND_URL. Case with K/F set: python tests/iter13_setup.py create NAME obesidad_moderada,diabetes_vascular. Web photo upload: expect_file_chooser on photo-gallery-<stage> (photo-camera also opens a file chooser on web). Backup restore UI: expect_file_chooser on backup-restore, then set_files to a JSON file. Delete attachments BEFORE deleting a case, because delete_case leaves them orphaned.",
+  "rca_of_issue": "Orphan attachments: delete_case in server.py (~line 896) only runs db.cases.delete_one and db.notes.delete_many. Nothing removes db.attachments or GridFS for that case_id."
+}

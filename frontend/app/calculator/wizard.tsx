@@ -17,6 +17,7 @@ import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
 import { CoInjector, CoInjectors } from "@/src/components/CoInjectors";
+import { FluidTemplates } from "@/src/components/FluidTemplates";
 
 const STEPS = ["Masa magra", "Dilución", "Volumen"];
 
@@ -44,6 +45,7 @@ export default function Wizard() {
   // step 2 - dilution
   const [c2, setC2] = useState(""); // desired index
   const [c1, setC1] = useState(""); // fluid index (stock)
+  const [fluidName, setFluidName] = useState("");
   // step 3 - volume: Vtotal = MM x K x F (K y F de la hoja del caso)
   const sheetInfo = useCaseSheetInfo(caseId);
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
@@ -81,6 +83,7 @@ export default function Wizard() {
     factor_f: fVal,
     desired_index_pct: num(c2),
     fluid_index_pct: num(c1),
+    ...(fluidName ? { fluid_name: fluidName } : {}),
     coinjectors: coinj,
   });
 
@@ -282,12 +285,21 @@ export default function Wizard() {
                 keyboardType="decimal-pad"
                 placeholder="Ej. 2"
               />
+              <FluidTemplates
+                c1={c1}
+                onPick={(idx, name) => {
+                  setC1(idx);
+                  setFluidName(name);
+                  setResult(null);
+                }}
+              />
               <Field
                 testID="wiz-c1"
-                label="Índice del fluido concentrado C1 (%)"
+                label={`Índice del fluido concentrado C1 (%)${fluidName ? ` · ${fluidName}` : ""}`}
                 value={c1}
                 onChangeText={(t) => {
                   setC1(t);
+                  setFluidName("");
                   setResult(null);
                 }}
                 keyboardType="decimal-pad"

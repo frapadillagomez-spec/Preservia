@@ -102,7 +102,8 @@ class DocumentInput(BaseModel):
 class AttachmentInput(BaseModel):
     label: str
     filename: Optional[str] = "documento"
-    kind: Optional[str] = "image"  # image | pdf
+    kind: Optional[str] = "image"  # image | pdf | photo
+    stage: Optional[str] = None  # antes | despues (solo fotos)
     data_base64: str
 
 
@@ -749,8 +750,12 @@ async def import_case(payload: Dict[str, Any], user: Dict[str, Any] = Depends(ge
             "created_at": now_iso(),
         })
     name = str(src.get("name") or "Caso importado")
+    num_in = str(src.get("case_number") or "").strip()
+    if not num_in or await db.cases.find_one({"case_number": num_in, "user_id": user["user_id"]}):
+        num_in = await next_case_number()
     doc = {
         "case_id": case_id,
+        "case_number": num_in,
         "user_id": user["user_id"],
         "name": name,
         "case_ref": str(src.get("case_ref") or ""),
@@ -758,9 +763,18 @@ async def import_case(payload: Dict[str, Any], user: Dict[str, Any] = Depends(ge
         "date": src.get("date") or now_iso(),
         "status": src.get("status") if src.get("status") in ("active", "archived") else "active",
         "calculations": calculations,
+        "sex": src.get("sex") if src.get("sex") in ("male", "female") else "",
+        "date_of_death": src.get("date_of_death"),
+        "embalming_date": src.get("embalming_date"),
+        "embalming_start": src.get("embalming_start"),
+        "embalming_end": src.get("embalming_end"),
+        "case_sheet": src.get("case_sheet") if isinstance(src.get("case_sheet"), dict) else None,
+        "logbook": [e for e in (src.get("logbook") or []) if isinstance(e, dict)][:500],
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
+    if doc["case_sheet"]:
+        doc["case_sheet"]["firma_tecnico"] = clean_signature(doc["case_sheet"].get("firma_tecnico"))
     await db.cases.insert_one(doc)
     for n in (src.get("notes") or []):
         if not isinstance(n, dict) or not (n.get("text") or "").strip():
@@ -886,6 +900,12 @@ async def delete_case(case_id: str, user: Dict[str, Any] = Depends(get_current_u
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     await db.cases.delete_one({"case_id": case_id})
     await db.notes.delete_many({"case_id": case_id})
+    for a in await db.attachments.find({"case_id": case_id, "user_id": user["user_id"]}).to_list(1000):
+        try:
+            await delete_pdf(a)
+        except Exception:
+            pass
+    await db.attachments.delete_many({"case_id": case_id, "user_id": user["user_id"]})
     return {"ok": True}
 
 
@@ -1180,6 +1200,98 @@ async def delete_coinjector(item_id: str, user: Dict[str, Any] = Depends(get_cur
     return {"ok": True}
 
 
+# ---------- Plantillas de fluidos arteriales ----------
+@api_router.get("/fluids")
+async def list_fluids(user: Dict[str, Any] = Depends(get_current_user)):
+    items = await db.fluid_templates.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0, "name_key": 0}).sort("name", 1).to_list(200)
+    return {"items": items}
+
+
+@api_router.post("/fluids")
+async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    name = str(payload.get("name") or "").strip()[:80]
+    try:
+        idx = float(payload.get("index_pct") or 0)
+    except (TypeError, ValueError):
+        idx = 0
+    if not name or not (0 < idx <= 100):
+        raise HTTPException(status_code=400, detail="El fluido necesita nombre y un índice entre 0 y 100 %")
+    doc = {"name": name, "name_key": name.lower(), "index_pct": round(idx, 2),
+           "brand": str(payload.get("brand") or "").strip()[:80], "updated_at": now_iso()}
+    existing = await db.fluid_templates.find_one({"user_id": user["user_id"], "name_key": doc["name_key"]}, {"_id": 0})
+    if existing:
+        await db.fluid_templates.update_one({"item_id": existing["item_id"]}, {"$set": doc})
+        item = {**existing, **doc}
+    else:
+        item = {"item_id": f"flu_{uuid.uuid4().hex[:12]}", "user_id": user["user_id"], **doc}
+        await db.fluid_templates.insert_one(dict(item))
+    item.pop("_id", None)
+    return {"item": item}
+
+
+@api_router.delete("/fluids/{item_id}")
+async def delete_fluid(item_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    res = await db.fluid_templates.delete_one({"item_id": item_id, "user_id": user["user_id"]})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Fluido no encontrado")
+    return {"ok": True}
+
+
+# ---------- Respaldo completo ----------
+@api_router.get("/backup")
+async def export_backup(user: Dict[str, Any] = Depends(get_current_user)):
+    uid = user["user_id"]
+    cases = await db.cases.find({"user_id": uid}, {"_id": 0}).to_list(5000)
+    for c in cases:
+        c["notes"] = await db.notes.find({"case_id": c["case_id"]}, {"_id": 0, "photos": 0}).to_list(1000)
+    strip = {"_id": 0, "user_id": 0, "name_key": 0}
+    return {
+        "app": "Preservia",
+        "backup_version": 1,
+        "exported_at": now_iso(),
+        "cases": cases,
+        "coinjectors": await db.coinjector_catalog.find({"user_id": uid}, strip).to_list(500),
+        "fluids": await db.fluid_templates.find({"user_id": uid}, strip).to_list(500),
+    }
+
+
+@api_router.post("/backup/restore")
+async def restore_backup(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    if payload.get("app") != "Preservia" or not isinstance(payload.get("cases"), list):
+        raise HTTPException(status_code=400, detail="Archivo de respaldo inválido")
+    existing_refs = {
+        (c.get("case_number"), c.get("deceased_name"))
+        for c in await db.cases.find({"user_id": user["user_id"]}, {"case_number": 1, "deceased_name": 1}).to_list(5000)
+    }
+    restored = skipped = 0
+    for c in payload["cases"]:
+        if not isinstance(c, dict):
+            continue
+        if (c.get("case_number"), c.get("deceased_name")) in existing_refs:
+            skipped += 1  # ya existe: no se duplica
+            continue
+        existing_refs.add((c.get("case_number"), c.get("deceased_name")))
+        try:
+            await import_case({"case": {**c, "name": c.get("name") or c.get("deceased_name") or "Caso restaurado"}}, user)
+            restored += 1
+        except HTTPException:
+            skipped += 1
+    cat = 0
+    for item in payload.get("coinjectors") or []:
+        try:
+            await add_coinjector(item, user)
+            cat += 1
+        except HTTPException:
+            pass
+    for item in payload.get("fluids") or []:
+        try:
+            await add_fluid(item, user)
+            cat += 1
+        except HTTPException:
+            pass
+    return {"restored": restored, "skipped": skipped, "catalog_items": cat}
+
+
 # ----------------------------- PDF Report -----------------------------
 INPUT_LABELS = {
     "desired_index_pct": "Concentracion de formaldehido inyectado (C2 %)",
@@ -1195,6 +1307,7 @@ INPUT_LABELS = {
     "factor_f": "Factor de correccion F",
     "k_factor": "Factor K (L/kg)",
     "coinjectors": "Co-inyectores",
+    "fluid_name": "Fluido arterial",
 }
 
 SEX_LABELS = {"male": "Masculino", "female": "Femenino"}
@@ -1310,7 +1423,8 @@ def signature_drawing(sig: Any, max_w: float = 75 * mm, max_h: float = 28 * mm):
 
 
 def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str, Any],
-              attachments: Optional[List[Dict[str, Any]]] = None) -> bytes:
+              attachments: Optional[List[Dict[str, Any]]] = None,
+              photos: Optional[List[Dict[str, Any]]] = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
@@ -1633,6 +1747,32 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     elems.append(Spacer(1, 16))
     elems.append(Paragraph("Documento generado por Preservia. Uso profesional.", small))
 
+    # ---- Fotografías antes / después (2 por fila, en orden de captura) ----
+    if photos:
+        elems.append(PageBreak())
+        elems.append(Paragraph("Fotografias del caso", h2))
+        for stage, title_txt in (("antes", "Antes del tratamiento"), ("despues", "Despues del tratamiento")):
+            group = [p for p in photos if p.get("stage") == stage and p.get("bytes")]
+            if not group:
+                continue
+            elems.append(Paragraph(title_txt, ParagraphStyle("PStage", parent=body, fontName="Helvetica-Bold", spaceBefore=8, spaceAfter=4)))
+            cells = []
+            for i, p in enumerate(group, start=1):
+                try:
+                    img = RLImage(BytesIO(p["bytes"]), width=80 * mm, height=80 * mm, kind="proportional")
+                except Exception:
+                    continue
+                cap = Paragraph(esc(f"{i}. {fmt_date(p.get('created_at'))}"), small)
+                cells.append([img, cap])
+            rows = []
+            for j in range(0, len(cells), 2):
+                pair = cells[j:j + 2]
+                rows.append([Table([[c[0]], [c[1]]]) for c in pair] + ([""] if len(pair) == 1 else []))
+            if rows:
+                pt = Table(rows, colWidths=[85 * mm, 85 * mm], hAlign="LEFT")
+                pt.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
+                elems.append(pt)
+
     for att in (attachments or []):
         raw = att.get("bytes")
         if not raw:
@@ -1685,12 +1825,13 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     notes = await db.notes.find({"case_id": case_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
-    atts = await db.attachments.find({"case_id": case_id}, {"_id": 0}).sort("created_at", 1).to_list(50)
+    atts = await db.attachments.find({"case_id": case_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
     for a in atts:
         a["bytes"] = await load_bytes(a)
-    image_atts = [a for a in atts if a.get("kind") != "pdf"]
+    image_atts = [a for a in atts if a.get("kind") not in ("pdf", "photo")]
     pdf_atts = [a for a in atts if a.get("kind") == "pdf"]
-    pdf_bytes = build_pdf(c, notes, user, image_atts)
+    photos = [a for a in atts if a.get("kind") == "photo"]
+    pdf_bytes = build_pdf(c, notes, user, image_atts, photos)
     if pdf_atts:
         pdf_bytes = merge_pdf_attachments(pdf_bytes, pdf_atts)
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
@@ -1708,7 +1849,13 @@ async def add_attachment(case_id: str, data: AttachmentInput, user: Dict[str, An
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     label = data.label if data.label in ATTACHMENT_LABELS else (data.label or "Documento adjunto")
-    kind = "pdf" if (data.kind or "").lower() == "pdf" else "image"
+    kind_in = (data.kind or "").lower()
+    kind = "pdf" if kind_in == "pdf" else ("photo" if kind_in == "photo" else "image")
+    stage = (data.stage or "").lower() if kind == "photo" else None
+    if kind == "photo" and stage not in ("antes", "despues"):
+        raise HTTPException(status_code=400, detail="La foto debe ser 'antes' o 'despues'")
+    if kind == "photo":
+        label = "Foto antes" if stage == "antes" else "Foto después"
     raw_b64 = data.data_base64.split(",", 1)[1] if data.data_base64.startswith("data:") else data.data_base64
     default_name = "documento.pdf" if kind == "pdf" else "documento.jpg"
     grid_id, size = await store_pdf(raw_b64, data.filename or default_name)
@@ -1719,6 +1866,7 @@ async def add_attachment(case_id: str, data: AttachmentInput, user: Dict[str, An
         "label": label,
         "filename": data.filename or default_name,
         "kind": kind,
+        "stage": stage,
         "mime": "application/pdf" if kind == "pdf" else "image/jpeg",
         "grid_id": grid_id,
         "size": size,
@@ -1734,7 +1882,7 @@ async def add_attachment(case_id: str, data: AttachmentInput, user: Dict[str, An
 async def list_attachments(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     atts = await db.attachments.find(
         {"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0, "grid_id": 0}
-    ).sort("created_at", 1).to_list(50)
+    ).sort("created_at", 1).to_list(500)
     return {"attachments": atts}
 
 

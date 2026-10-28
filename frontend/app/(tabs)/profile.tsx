@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { BrandBar, BrandLogo } from "@/src/components/BrandLogo";
 import { LockSettingsCard } from "@/src/components/LockSettingsCard";
+import { BackupCard } from "@/src/components/BackupCard";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
@@ -37,6 +38,7 @@ export default function Profile() {
         </View>
 
         <LockSettingsCard />
+        <BackupCard />
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.lg }]}>

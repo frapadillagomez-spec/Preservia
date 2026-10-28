@@ -102,7 +102,7 @@ export default function CaseDetail() {
       const resp = await api.get<{ case: CaseData }>(`/cases/${id}`);
       setData(resp.case);
       const at = await api.get<{ attachments: Attachment[] }>(`/cases/${id}/attachments`);
-      setAttachments(at.attachments);
+      setAttachments(at.attachments.filter((a: any) => a.kind !== "photo"));
     } catch {
       setError(true);
     } finally {

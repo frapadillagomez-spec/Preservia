@@ -8,6 +8,7 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button } from "@/src/components/ui";
 import { CaseSheetForm, EMPTY_SHEET, Sheet } from "@/src/components/CaseSheetForm";
+import { CasePhotos } from "@/src/components/CasePhotos";
 import { colors, font, fontSize, spacing } from "@/src/theme";
 import { dateMx, timeMx } from "@/src/utils/mxtime";
 
@@ -75,7 +76,15 @@ export default function CaseSheet() {
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {loading ? null : <CaseSheetForm sheet={sheet} onChange={setSheet} />}
+          {loading ? null : (
+            <>
+              <CaseSheetForm sheet={sheet} onChange={setSheet} />
+              <Text style={styles.photosTitle}>Fotos antes y después</Text>
+              <Text style={styles.subtitle}>Se agregan en orden al reporte PDF del caso.</Text>
+              <View style={{ height: spacing.md }} />
+              <CasePhotos caseId={String(caseId)} />
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -92,6 +101,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   title: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xxl },
   subtitle: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2 },
+  photosTitle: { color: colors.onSurface, fontFamily: font.bold, fontSize: fontSize.xl, marginTop: spacing.xl },
   scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl },
   footer: {
     paddingHorizontal: spacing.lg,
