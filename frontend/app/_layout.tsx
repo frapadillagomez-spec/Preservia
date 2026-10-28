@@ -11,6 +11,7 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { useAppFonts } from "@/src/hooks/use-app-fonts";
 import { AuthProvider } from "@/src/context/AuthContext";
 import { ToastProvider } from "@/src/components/Toast";
+import { SyncLayout } from "@/src/components/SyncCenter";
 import { colors } from "@/src/theme";
 
 // Disable logbox errors so users can see the app.
@@ -42,6 +43,7 @@ export default function RootLayout() {
             <ToastProvider>
               <View style={{ flex: 1, backgroundColor: colors.surface }}>
                 <StatusBar style="dark" />
+                <SyncLayout>
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }}>
                   <Stack.Screen name="index" />
                   <Stack.Screen name="welcome" />
@@ -53,6 +55,7 @@ export default function RootLayout() {
                   <Stack.Screen name="calculator/wizard" options={{ presentation: "modal" }} />
                   <Stack.Screen name="viewer" />
                 </Stack>
+                </SyncLayout>
               </View>
             </ToastProvider>
           </AuthProvider>

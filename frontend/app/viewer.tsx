@@ -66,7 +66,7 @@ export default function Viewer() {
   const { scope, id, title } = useLocalSearchParams<{ scope: string; id: string; title: string }>();
   const [b64, setB64] = useState<string | null>(null);
   const [filename, setFilename] = useState("Reporte.pdf");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | false>(false);
   const [sharing, setSharing] = useState(false);
   const isReport = scope === "report";
   const isAttachment = scope === "attachment";
@@ -87,8 +87,8 @@ export default function Viewer() {
           const resp = await api.get<{ document: { pdf_base64: string } }>(`${endpoint}/${id}`);
           setB64(resp.document.pdf_base64);
         }
-      } catch {
-        setError(true);
+      } catch (e: any) {
+        setError(e?.status === 0 ? "Sin conexión: el documento necesita internet para generarse o descargarse." : "No se pudo cargar el documento");
       }
     })();
   }, [scope, id, isReport, isAttachment]);
@@ -144,7 +144,7 @@ export default function Viewer() {
         {error ? (
           <View style={styles.center}>
             <Ionicons name="alert-circle-outline" size={40} color={colors.onSurfaceTertiary} />
-            <Text style={styles.msg}>No se pudo cargar el documento</Text>
+            <Text style={styles.msg}>{error || "No se pudo cargar el documento"}</Text>
           </View>
         ) : b64 === null ? (
           <View style={styles.center}>
@@ -183,5 +183,5 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, textAlign: "center", color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg },
   body: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
-  msg: { color: colors.onSurfaceSecondary, fontFamily: font.regular, fontSize: fontSize.base },
+  msg: { color: colors.onSurfaceSecondary, fontFamily: font.regular, fontSize: fontSize.base, textAlign: "center", paddingHorizontal: spacing.xl },
 });

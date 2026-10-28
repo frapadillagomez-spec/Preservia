@@ -1,0 +1,40 @@
+{
+  "summary": "Frontend retest of the iteration 12 fixes at a 375x667 viewport. All 4 fixes pass. FIX 1: offline I added a note and then edited the case sheet; meanwhile I PUT the sheet via the API; after reconnecting, the sync-conflict modal appeared. 'conflict-keep-mine' kept my sheet (MINE_EDIT) and 'conflict-use-server' kept the server sheet (SERVER_EDIT). The note uploaded in both cases and the queue emptied. FIX 2: the sync-pill is now an in-flow banner at y=0, 375x44, and the screens below are pushed down. No button is covered on tabs, case detail, sheet, calculator/volume, calculator/kvolume or the wizard. A tap at the centre of every main button lands on that button (elementFromPoint check). Tapping the banner starts the sync, and the queue emptied in 0.6s. FIX 3: deleting a note, calculation, logbook entry or attachment offline shows the toast 'Sin conexión. Esta acción necesita internet.' Deleting a case shows window.confirm: cancel keeps the case, accept while offline shows the error toast, accept while online deletes it and returns to the list. FIX 4: the viewer report offline shows 'Sin conexión: el documento necesita internet...'. The gap between the wizard step 3 card and its button is now 16px. Regression: a case created offline syncs (PRV261028A0026, sheet saved on the server). The wizard with K 0.135 and F 1.093 gives 8.93 L, V1 714 mL, water 8214 mL and 1.51 bottles, both online and offline. Only minor issues remain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Auto-sync on reconnect (web)", "issue": "After the network came back (Playwright set_offline(False)), the banner kept saying 'Sin conexión' and auto-sync only started after about 22s, from the 30s setInterval. The NetInfo online event or reachability check did not trigger syncNow at once on web. Tapping the banner syncs immediately. Native NetInfo probably behaves better; consider also listening to window 'online' on web, or pinging as soon as NetInfo reports a change.", "testID": "sync-pill", "priority": "LOW"},
+      {"component": "Conflict modal wording", "issue": "When the offline edit came from case-edit (PUT /cases/{id} and then PUT /sheet), the modal says 'cambiaste los datos del caso' even though the Hoja del caso was also changed. describe() picks the first PUT/PATCH it finds. Reference: src/offline/sync.ts:59-61", "testID": "sync-conflict", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Wizard step 3", "issues": ["wiz-kf-card still has about 32px of empty space at the top inside the card. resultGrid has marginTop: spacing.lg (wizard.tsx:512) and is the card's first child; use marginTop 0 inside kfCard.", "The 'masa magra' label is still lowercase next to 'Factor K' and 'Factor F'."]},
+      {"screen": "Viewer (offline error)", "issues": ["The error message has no horizontal padding, so the text touches the left edge of the screen at x=0. Add paddingHorizontal: spacing.lg and textAlign: 'center' to styles.center/msg. Reference: app/viewer.tsx:185-186"]},
+      {"screen": "Tabs (Casos)", "issues": ["The root uses paddingTop: insets.top, which is 0 while the banner shows (and always 0 on web), and BrandBar has no top padding. The logo sits flush against the banner or screen edge and looks clipped. Add spacing.sm of top padding."]},
+      {"screen": "Toast", "issues": ["The toast appears at the top over the banner and the case header buttons (back, edit, delete) for its whole duration. This is minor because it is temporary."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/iter13_setup.py"],
+  "action_items": [
+    "LOW: Start syncing immediately on reconnect on web, for example with a window 'online' listener or a ping when NetInfo changes, instead of waiting for the 30s interval.",
+    "LOW: Wizard step 3: remove the top margin of resultGrid inside wiz-kf-card; capitalise 'Masa magra'.",
+    "LOW: viewer.tsx error state: add horizontal padding and centred text.",
+    "LOW: Conflict modal description: say 'los datos y la Hoja del caso' when both PUT /cases/{id} and PUT /sheet are queued.",
+    "LOW: Tabs header: add top padding to BrandBar.",
+    "LOW (carry-over): Update or remove the outdated auth-era backend tests (test_pdf_publish.py, test_preservia_api.py)."
+  ],
+  "critical_code_review_comments": [
+    "sync.ts: the conflict check now runs before the first op of a case, using the oldest base_updated_at, and 'confirmed' is set only after the check or after a successful op. This logic is correct and verified. A rejected POST /cases still drops the op and leaves its child ops with local ids (carry-over).",
+    "Calculation labels from the backend have no accents ('Volumen de inyeccion'), while the UI elsewhere uses accents.",
+    "app/case/[id].tsx is 1165 lines; it should be split.",
+    "The expo supervisor log shows a version-mismatch warning (expo 54.0.35, expected ~54.0.37) while package.json says ^58. It is probably a stale log entry; check that the installed version matches."
+  ],
+  "updated_files": ["/app/backend/tests/iter13_setup.py (new helper: create/server_edit/get/cleanup of TEST_ cases)"],
+  "success_rate": {"backend": "N/A (frontend-only retest)", "frontend": "100% of the requested fixes (FIX 1 to 4 and the regression checks) pass; 6 low-priority polish items"},
+  "seed_data_creation": "Created TEST_Conflicto, TEST_Conflicto2, TEST_WizardKF and TEST_OfflineNuevo (plus a test note, calculation, logbook entry and attachment). All were deleted with iter13_setup.py cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "No auth. The index always redirects to /welcome; tap welcome-skip. To simulate offline while still being able to use page.goto, use page.route('**/api/**', abort) after warming the cache online; the banner then shows 'Sin conexión'. context.set_offline(True) alone does not show the banner until an API call fails. The conflict repro uses iter13_setup.py: create (name, conditions), server_edit (cid), get (cid), cleanup. To get F 1.093, use the conditions rutinario, edema_localizado and diabetes_vascular with weight 80, height 175 and sex male, which gives 8.93 L. The toast text is best read with text_content() because inner_text can be empty during the fade-in.",
+  "rca_of_issue": "No new high-priority bugs. The ~22s auto-sync delay on web happens because SyncLayout relies on NetInfo's isConnected/isInternetReachable; on web after reconnecting, it did not report a change that triggered syncNow, so the queue waited for the 30s setInterval."
+}

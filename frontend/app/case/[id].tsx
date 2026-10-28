@@ -30,6 +30,7 @@ import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateTimeMx } from "@/src/utils/mxtime";
 import { KFSummary, KFSummaryCard } from "@/src/components/KFSummaryCard";
+import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
@@ -126,6 +127,7 @@ export default function CaseDetail() {
       loadProducts();
     }, [load, loadProducts]),
   );
+  useOfflineRefresh(load);
 
   // ---------- logbook ----------
   const openLogModal = () => {
@@ -169,11 +171,17 @@ export default function CaseDetail() {
     }
   };
 
-  const deleteLogEntry = async (logId: string) => {
+  const removeItem = async (path: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await api.del(`/cases/${id}/logbook/${logId}`);
-    load();
+    try {
+      await api.del(path);
+      load();
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo eliminar", "error");
+    }
   };
+
+  const deleteLogEntry = (logId: string) => removeItem(`/cases/${id}/logbook/${logId}`);
 
   // ---------- notes ----------
   const saveNote = async () => {
@@ -194,17 +202,9 @@ export default function CaseDetail() {
     }
   };
 
-  const deleteCalc = async (calcId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await api.del(`/cases/${id}/calculations/${calcId}`);
-    load();
-  };
+  const deleteCalc = (calcId: string) => removeItem(`/cases/${id}/calculations/${calcId}`);
 
-  const deleteNote = async (noteId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await api.del(`/notes/${noteId}`);
-    load();
-  };
+  const deleteNote = (noteId: string) => removeItem(`/notes/${noteId}`);
 
   // ---------- attachments (scan documents) ----------
   const ensurePermission = async (kind: "camera" | "media") => {
@@ -318,16 +318,28 @@ export default function CaseDetail() {
     }
   };
 
-  const deleteAttachment = async (attId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    await api.del(`/attachments/${attId}`);
-    load();
+  const deleteAttachment = (attId: string) => removeItem(`/attachments/${attId}`);
+
+  const doDeleteCase = async () => {
+    try {
+      await api.del(`/cases/${id}`);
+      toast.show("Caso eliminado", "success");
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo eliminar el caso", "error");
+    }
   };
 
-  const deleteCase = async () => {
-    await api.del(`/cases/${id}`);
-    toast.show("Caso eliminado", "success");
-    router.replace("/(tabs)");
+  const deleteCase = () => {
+    const msg = "Se eliminarán el caso, sus notas, cálculos y documentos. Esta acción no se puede deshacer.";
+    if (Platform.OS === "web") {
+      if (window.confirm(`¿Eliminar este caso?\n\n${msg}`)) doDeleteCase();
+      return;
+    }
+    Alert.alert("¿Eliminar este caso?", msg, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Eliminar", style: "destructive", onPress: doDeleteCase },
+    ]);
   };
 
   const toggleArchive = async () => {

@@ -23,6 +23,7 @@ import { useToast } from "@/src/components/Toast";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateMx } from "@/src/utils/mxtime";
 import { BrandBar } from "@/src/components/BrandLogo";
+import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 const EMPTY_IMG =
   "https://images.unsplash.com/photo-1651760680066-db9d32bd0357?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBtZWRpY2FsJTIwY2xpcGJvYXJkJTIwbm90ZXMlMjBlbXB0eSUyMHN0YXRlJTIwdHJhbnNwYXJlbnR8ZW58MHx8fHwxNzgzMzc3NzA0fDA&ixlib=rb-4.1.0&q=85";
@@ -37,6 +38,7 @@ type Case = {
   calc_count: number;
   note_count: number;
   updated_at: string;
+  _pending?: boolean;
 };
 
 function fmtDate(iso: string) {
@@ -75,6 +77,7 @@ export default function CasesList() {
       load();
     }, [load]),
   );
+  useOfflineRefresh(load);
 
   const filtered = cases.filter((c) => {
     const status = c.status || "active";
@@ -140,6 +143,12 @@ export default function CasesList() {
             <Ionicons name="document-text-outline" size={13} color={colors.onSurfaceTertiary} />
             <Text style={styles.metaText}>{item.note_count}</Text>
           </View>
+          {item._pending && (
+            <View testID={`case-pending-${item.case_id}`} style={styles.metaChip}>
+              <Ionicons name="cloud-upload-outline" size={13} color={colors.warning} />
+              <Text style={[styles.metaText, { color: colors.warning }]}>Por sincronizar</Text>
+            </View>
+          )}
         </View>
       </View>
       <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />

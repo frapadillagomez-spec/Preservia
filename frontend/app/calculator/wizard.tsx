@@ -16,8 +16,7 @@ import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
-import { FactorFPicker, CaseType, isFactorFValid } from "@/src/components/FactorFPicker";
-import { F_MAX, F_MIN } from "@/src/data/factorF";
+import { CoInjector, CoInjectors } from "@/src/components/CoInjectors";
 
 const STEPS = ["Masa magra", "Dilución", "Volumen"];
 
@@ -45,31 +44,44 @@ export default function Wizard() {
   // step 2 - dilution
   const [c2, setC2] = useState(""); // desired index
   const [c1, setC1] = useState(""); // fluid index (stock)
-  const [v1, setV1] = useState("473"); // concentrate volume mL (16 fl oz bottle)
-  // step 3 - volume
-  const [caseType, setCaseType] = useState<CaseType>("normal");
-  const [factorF, setFactorF] = useState("");
+  // step 3 - volume: Vtotal = MM x K x F (K y F de la hoja del caso)
   const sheetInfo = useCaseSheetInfo(caseId);
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
   const [busy3, setBusy3] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+  const [coinj, setCoinj] = useState<CoInjector[]>([]);
 
   useEffect(() => {
-    if (!sheetInfo) return;
-    if (sheetInfo.factor) {
-      setCaseType("sheet");
-      setFactorF(sheetInfo.factor.f.toFixed(3));
-    }
+    if (!sheetInfo || prefilled) return;
+    setPrefilled(true);
     setWeight((w) => w || sheetInfo.weight);
     setHeight((h) => h || sheetInfo.height);
     if (sheetInfo.sex) setSex(sheetInfo.sex);
-  }, [sheetInfo]);
+  }, [sheetInfo, prefilled]);
 
   const num = (s: string) => parseFloat((s || "").replace(",", "."));
 
-  const caseInputs = () => ({
-    ...(caseType === "sheet" ? { case_type: caseType, factor_f: num(factorF) } : { case_type: caseType }),
-    ...(sheetInfo?.general ? { k_factor: sheetInfo.general.avg } : {}),
+  // Cualquier cambio en pasos anteriores invalida el resultado del paso 3.
+  useEffect(() => {
+    setResult(null);
+  }, [weight, height, sex, method, c1, c2]);
+
+  const kVal = sheetInfo?.general?.avg ?? null;
+  const fVal = sheetInfo?.factor?.f ?? null;
+  const sheetReady = kVal !== null && fVal !== null;
+
+  const injectionInputs = () => ({
+    weight_kg: num(weight),
+    height_cm: num(height),
+    sex,
+    lbm_method: method,
+    mode: "kf",
+    k_factor: kVal,
+    factor_f: fVal,
+    desired_index_pct: num(c2),
+    fluid_index_pct: num(c1),
+    coinjectors: coinj,
   });
 
   const ratio = useMemo(() => {
@@ -102,25 +114,13 @@ export default function Wizard() {
   };
 
   const computeVolume = async () => {
-    if (caseType === "sheet" && !isFactorFValid(factorF)) {
-      toast.show(`El Factor F debe estar entre ${F_MIN} y ${F_MAX}`, "error");
+    if (!sheetReady) {
+      toast.show("Primero llena la condición general y las condiciones en la Hoja del caso", "error");
       return;
     }
     setBusy3(true);
     try {
-      const resp = await api.post("/calculate", {
-        type: "injection",
-        inputs: {
-          weight_kg: num(weight),
-          height_cm: num(height),
-          sex,
-          ...caseInputs(),
-          desired_index_pct: num(c2),
-          fluid_index_pct: num(c1),
-          concentrate_ml: num(v1),
-          lbm_method: method,
-        },
-      });
+      const resp = await api.post("/calculate", { type: "injection", inputs: injectionInputs() });
       setResult(resp);
     } catch (e: any) {
       toast.show(e?.detail || "Error al calcular el volumen", "error");
@@ -134,17 +134,7 @@ export default function Wizard() {
     try {
       const base = { weight_kg: num(weight), height_cm: num(height), sex };
       await api.post(`/cases/${caseId}/calculations`, { type: "lbm", inputs: { ...base, method } });
-      await api.post(`/cases/${caseId}/calculations`, {
-        type: "injection",
-        inputs: {
-          ...base,
-          ...caseInputs(),
-          desired_index_pct: num(c2),
-          fluid_index_pct: num(c1),
-          concentrate_ml: num(v1),
-          lbm_method: method,
-        },
-      });
+      await api.post(`/cases/${caseId}/calculations`, { type: "injection", inputs: injectionInputs() });
       toast.show("Cálculos guardados en el caso", "success");
       if (router.canGoBack()) router.back();
       else router.replace(`/case/${caseId}`);
@@ -296,23 +286,15 @@ export default function Wizard() {
                 testID="wiz-c1"
                 label="Índice del fluido concentrado C1 (%)"
                 value={c1}
-                onChangeText={setC1}
-                keyboardType="decimal-pad"
-                placeholder="Ej. 25"
-              />
-              <Field
-                testID="wiz-v1"
-                label="Volumen de concentrado V1 (mL)"
-                value={v1}
                 onChangeText={(t) => {
-                  setV1(t);
+                  setC1(t);
                   setResult(null);
                 }}
                 keyboardType="decimal-pad"
-                placeholder="473 (botella 16 oz)"
+                placeholder="Ej. 25"
               />
               <Text style={styles.hintLine}>
-                V1 fijo en 473 mL (botella comercial de 16 oz fl). Puedes editarlo (p. ej. 946 mL = 2 botellas).
+                El volumen de concentrado (V1) se calcula en el paso 3 a partir del volumen total: V1 = C2·Vtotal / C1.
               </Text>
               {ratio && (
                 <View testID="wiz-ratio-result" style={styles.resultCard}>
@@ -331,68 +313,99 @@ export default function Wizard() {
 
           {step === 2 && (
             <>
-              <Text style={styles.stepTitle}>Paso 3 · Volumen de solución</Text>
-              <Text style={styles.stepSub}>Resultado final: con V1 (concentrado) y C1·V1=C2·V2 se obtiene el volumen total V2.</Text>
-              <FactorFPicker
-                testPrefix="wiz-casetype"
-                caseType={caseType}
-                onCaseType={(k) => {
-                  setCaseType(k);
-                  setResult(null);
-                }}
-                factorF={factorF}
-                onFactorF={(t) => {
-                  setFactorF(t);
-                  setResult(null);
-                }}
-                sheetFactor={sheetInfo?.factor || null}
-              />
+              <Text style={styles.stepTitle}>Paso 3 · Volumen total de inyección</Text>
+              <Text style={styles.stepSub}>Vtotal = Masa magra × K × F, con K y F de la Hoja del caso.</Text>
+              {sheetReady ? (
+                <View testID="wiz-kf-card" style={[styles.resultCard, styles.kfCard]}>
+                  <View style={[styles.resultGrid, { marginTop: 0 }]}>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>Masa magra</Text>
+                      <Text style={styles.resultNum}>{lbm ?? "—"} kg</Text>
+                    </View>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>Factor K</Text>
+                      <Text testID="wiz-k-value" style={styles.resultNum}>{kVal!.toFixed(3)} L/kg</Text>
+                    </View>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>Factor F</Text>
+                      <Text testID="wiz-f-value" style={styles.resultNum}>{fVal!.toFixed(3)}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.resultHint}>
+                    K: {sheetInfo!.general!.label} · F: {sheetInfo!.factor!.dominant.label}
+                    {sheetInfo!.factor!.secondary ? ` (${sheetInfo!.factor!.adjustmentPct > 0 ? "+" : ""}${sheetInfo!.factor!.adjustmentPct}% ${sheetInfo!.factor!.secondary.label})` : ""}
+                  </Text>
+                </View>
+              ) : (
+                <View testID="wiz-sheet-missing" style={[styles.resultCard, styles.kfCard]}>
+                  <Text style={styles.resultLabel}>Falta información en la Hoja del caso</Text>
+                  <Text style={styles.resultHint}>
+                    {!caseId
+                      ? "Abre este asistente desde un caso para usar su Factor K y F."
+                      : `Selecciona ${kVal === null ? "la condición general (Factor K)" : ""}${kVal === null && fVal === null ? " y " : ""}${fVal === null ? "al menos una condición del cuerpo (Factor F)" : ""} para calcular el volumen total.`}
+                  </Text>
+                  {!!caseId && (
+                    <View style={{ marginTop: spacing.md }}>
+                      <Button
+                        testID="wiz-open-sheet"
+                        label="Llenar Hoja del caso"
+                        variant="outline"
+                        icon="document-text-outline"
+                        onPress={() => router.push(`/case/sheet?caseId=${caseId}`)}
+                      />
+                    </View>
+                  )}
+                </View>
+              )}
+              {sheetReady && (
+                <CoInjectors
+                  items={coinj}
+                  onChange={(items) => {
+                    setCoinj(items);
+                    setResult(null);
+                  }}
+                />
+              )}
               <Button
                 testID="wiz-compute-volume"
-                label="Calcular volumen"
+                label="Calcular volumen total"
                 variant="secondary"
                 icon="flask-outline"
                 onPress={computeVolume}
                 loading={busy3}
+                disabled={!sheetReady}
               />
               {result && (
                 <View testID="wiz-volume-result" style={styles.resultCard}>
-                  <Text style={styles.resultLabel}>Volumen de solución (V2)</Text>
+                  <Text style={styles.resultLabel}>Volumen total de inyección</Text>
                   <Text style={styles.resultValue}>{result.results.total_l} L</Text>
+                  <Text style={styles.resultHint}>
+                    {result.results.lbm_kg} kg × {result.results.k_factor} L/kg × {result.results.factor_f}
+                  </Text>
                   <View style={styles.resultGrid}>
                     <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>V1 concentrado</Text>
+                      <Text style={styles.resultKey}>Concentrado V1</Text>
                       <Text style={styles.resultNum}>{result.results.concentrate_ml} mL</Text>
                     </View>
                     <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>formaldehído</Text>
+                      <Text style={styles.resultKey}>Co-inyectores</Text>
+                      <Text testID="wiz-coinj-total" style={styles.resultNum}>{result.results.coinjectors_ml ?? 0} mL</Text>
+                    </View>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>Agua a agregar en bomba</Text>
+                      <Text testID="wiz-water" style={styles.resultNum}>{result.results.water_ml} mL</Text>
+                    </View>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>Formaldehído</Text>
                       <Text style={styles.resultNum}>{result.results.formaldehyde_ml} mL</Text>
                     </View>
                     <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>agua inyección</Text>
-                      <Text style={styles.resultNum}>{result.results.water_injection_ml} mL</Text>
-                    </View>
-                    <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>agua a diluir</Text>
-                      <Text style={styles.resultNum}>{result.results.water_ml} mL</Text>
-                    </View>
-                    <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>botellas</Text>
+                      <Text style={styles.resultKey}>Botellas 16 oz</Text>
                       <Text style={styles.resultNum}>{result.results.bottles}</Text>
                     </View>
-                    <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>masa magra</Text>
-                      <Text style={styles.resultNum}>{result.results.lbm_kg} kg</Text>
-                    </View>
-                    {result.results.k_factor !== undefined && (
-                      <View testID="wiz-recommended-k" style={styles.resultItem}>
-                        <Text style={styles.resultKey}>recomendado K×MM×F (K {result.results.k_factor} L/kg)</Text>
-                        <Text style={styles.resultNum}>{result.results.recommended_l} L</Text>
-                      </View>
-                    )}
                   </View>
                   <Text style={styles.resultHint}>
-                    {result.results.case_type} ({result.results.adjustment})
+                    C1 {result.results.fluid_index_pct}% → C2 {result.results.desired_index_pct}%
                   </Text>
                 </View>
               )}
@@ -499,6 +512,7 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: colors.surfaceInverse },
   segmentText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base },
   segmentTextActive: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
+  kfCard: { marginTop: spacing.sm, marginBottom: spacing.lg },
   resultCard: {
     backgroundColor: colors.brandTertiary,
     borderRadius: radius.lg,

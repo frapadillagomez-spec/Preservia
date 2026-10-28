@@ -1,0 +1,45 @@
+{
+  "summary": "I tested the wizard K×F change (B1–B3) and offline mode (A1–A5) on a 375x667 viewport. Backend: the new test_injection_kf.py passes 9/9, and together with the factor K/F tests that is 43/43. Wizard: with K 0.135 and F 1.093 it gives Vtotal 8.93 L, V1 714 mL, water 8214 mL and 1.51 bottles, both online and offline, and the sheet-missing flow works, including the refresh when you come back from the sheet. Offline: cached list and case detail render, the 'Sin conexión · N pendientes' pill shows, and you can create a case with K/F/signature, add a note and a logbook entry, and run and save calculations, which use local formulas. After reconnecting the queue syncs, the case gets a PRV number and the data is on the server. The conflict modal works for both keep-mine and use-server. Bugs found: (1) a queued note, logbook entry or calculation skips conflict detection for a later sheet edit on the same case, so server edits are silently overwritten; (2) the sync pill covers the main buttons on calculator and wizard screens; (3) delete actions have no error handling when offline, so no toast appears.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "legacy tests", "issue": "15 old tests fail in test_pdf_publish.py and test_preservia_api.py. They date from when the app had login (test_me_endpoint, test_user_isolation, the no-token 401 check, the old subcategory rules, KeyError 'ficha_id'). These are not regressions from this change; the tests are out of date and should be updated or removed. Overall: 114 passed, 15 failed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SyncCenter pill overlaps main buttons", "issue": "The pill is placed at bottom = insets.bottom + 84 with zIndex 50 on every screen, including full-screen stack screens that have no tab bar. While offline or with pending changes it covers the middle of calc-compute-button (calculator/[type]) and of wiz-compute-lbm and wiz-compute-volume (wizard), even when scrolled to the bottom. A tap in the middle of the button lands on the pill, so 'Calcular' looks like it does nothing; I could only press it by tapping near the button's left edge. Reference: src/components/SyncCenter.tsx:71", "testID": "sync-pill", "priority": "HIGH"},
+      {"component": "Delete actions offline", "issue": "deleteCase, deleteNote, deleteCalc, deleteLogEntry and deleteAttachment have no try/catch. When offline, tapping case-delete gives no toast and the promise rejection is not handled, which does not meet A5. deleteCase also deletes the whole case on a single tap with no confirmation. Reference: app/case/[id].tsx:174-333", "testID": "case-delete", "priority": "MEDIUM"},
+      {"component": "PDF report offline", "issue": "The viewer shows the generic 'No se pudo cargar el documento'. It does not crash, but it gives no message that the report needs internet.", "testID": "preview-report-button", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Offline sync conflict detection", "issue": "In sync.ts:75, any op that succeeds runs confirmed.add(cid), including note, logbook and calculation POSTs. If a note, logbook entry or calculation for a case comes before that case's sheet edit in the queue, the conflict check for the PUT /sheet is skipped and the server's changes are silently overwritten. Reproduced: offline, add a note and then edit the sheet; meanwhile PUT the sheet via curl; go online → no sync-conflict modal, and the local sheet replaced the server version.", "affected_testIDs": ["sync-conflict", "conflict-keep-mine", "conflict-use-server"]}
+    ],
+    "design_issues": [
+      {"screen": "Wizard step 3", "issues": ["wiz-kf-card has about 30px of empty space at the top inside the card", "wiz-compute-volume sits directly under the card with no gap (use 16px)", "the 'masa magra' label is lowercase while 'Factor K' and 'Factor F' are capitalised"]},
+      {"screen": "SyncCenter", "issues": ["The pill's minHeight is 36, below the 44px touch target; hitSlop 8 partly compensates"]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_injection_kf.py", "/app/test_reports/pytest/pytest_iter12.xml", "/app/test_reports/pytest/pytest_iter12_all.xml"],
+  "action_items": [
+    "HIGH: Fix conflict detection in src/offline/sync.ts. Run the server updated_at check before sending the first queued op of a case that has any PUT/PATCH op with base_updated_at, using the earliest base. Only mark the case as confirmed after that check, not after any successful POST of a note, logbook entry or calculation.",
+    "HIGH: Move the sync pill so it does not cover main buttons. Options: show it only on tab screens; place it at the top on stack screens; or add matching bottom padding or footer awareness on the calculator and wizard screens.",
+    "MEDIUM: Wrap the delete handlers in app/case/[id].tsx in try/catch and show toast.show(e.detail, 'error') when offline. Add a confirmation before deleting a case.",
+    "LOW: Show an offline-specific message or toast in the viewer when the report or attachments cannot load offline.",
+    "LOW: Update or remove the outdated auth-era tests in test_pdf_publish.py and test_preservia_api.py."
+  ],
+  "critical_code_review_comments": [
+    "sync.ts: when a server rejects a change, the op is dropped with only a toast (lastError). If a POST /cases is rejected, its child ops stay queued with local ids and will fail as well.",
+    "A case created offline cannot be deleted or cancelled while still pending: DELETE on a local id throws.",
+    "use-case-sheet-info.ts swallows errors silently (.catch(() => {})). If the case cannot be read, the wizard shows 'missing sheet' instead of an error.",
+    "app/case/[id].tsx is 1156 lines and server.py is 1751 lines; both are over 700 lines and should be split."
+  ],
+  "updated_files": ["/app/backend/tests/test_injection_kf.py"],
+  "success_rate": {"backend": "100% for the new features (43/43); 114/129 for the full suite, with all failures in outdated auth-era tests", "frontend": "about 85%: B2, B3, A1, A2, A3 and A4 (both choices) pass; A5 partly (delete gives no toast); conflict bug when a note or calculation is queued before a sheet edit"},
+  "seed_data_creation": "Temporary TEST_ cases were created and all of them were deleted afterwards.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "No auth: tap welcome-skip first. Offline: use page.context.set_offline(True) only after the app has loaded, and move with in-app taps (page.goto does not work offline). localStorage holds off_queue and off_idmap (local id → real id). Case detail tabs are tab-calc, tab-notes, tab-logbook, tab-docs and tab-report. To edit an existing case's sheet: case-edit → kcond-*/cond-* → create-case-button. New case: new-case-fab. While the pill is visible, tap calculator/wizard main buttons with page.mouse.click near the left edge, or the pill catches the tap. Signature: mouse move with steps=4 inside signature-pad.",
+  "rca_of_issue": "Conflict bug: sync.ts adds cid to 'confirmed' after any successful op (line 75), and the conflict check only runs when !confirmed.has(cid). The note POST runs first and updates the server's updated_at; then the sheet PUT skips the check and overwrites. Pill overlap: the pill is absolutely positioned for the tab-bar layout but is mounted globally above stack screens that have bottom footers."
+}

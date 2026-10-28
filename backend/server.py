@@ -419,6 +419,57 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
             lbm_info = compute_lbm(sex, weight_kg, height_cm, method)
             lbm = lbm_info["lbm"]
             lbm_method_label = LBM_METHOD_LABELS[lbm_info["method"]]
+            if str(inputs.get("mode", "")).lower() == "kf":
+                # Vtotal = masa magra x K x F (K y F de la hoja del caso); la mezcla sale de C1·V1 = C2·Vtotal
+                k_val = float(inputs["k_factor"])
+                if not (K_MIN <= k_val <= K_MAX):
+                    raise ValueError(f"El Factor K debe estar entre {K_MIN} y {K_MAX} L/kg")
+                f_val = float(inputs["factor_f"])
+                if not (F_MIN <= f_val <= F_MAX):
+                    raise ValueError(f"El Factor F debe estar entre {F_MIN} y {F_MAX}")
+                total_ml = max(lbm, 0.0) * k_val * f_val * 1000.0
+                conc_ml = c2 * total_ml / c1
+                coinj = []
+                for item in inputs.get("coinjectors") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    v = float(item.get("volume_ml") or 0)
+                    if v <= 0 or not str(item.get("name") or "").strip():
+                        raise ValueError("Cada co-inyector necesita nombre y un volumen mayor que 0")
+                    coinj.append({"name": str(item["name"]).strip()[:80],
+                                  "reason": str(item.get("reason") or "").strip()[:160],
+                                  "volume_ml": round(v, 1)})
+                coinj_ml = sum(c["volume_ml"] for c in coinj)
+                if conc_ml + coinj_ml > total_ml:
+                    raise ValueError("El concentrado y los co-inyectores superan el volumen total de inyección")
+                water_ml = total_ml - conc_ml - coinj_ml
+                formaldehyde_ml = (c2 / 100.0) * total_ml
+                results = {
+                    "lbm_kg": round(lbm, 1),
+                    "lbm_method": lbm_method_label,
+                    "k_factor": round(k_val, 3),
+                    "factor_f": round(f_val, 3),
+                    "total_l": round(total_ml / 1000.0, 2),
+                    "total_ml": round(total_ml, 0),
+                    "concentrate_ml": round(conc_ml, 0),
+                    "water_ml": round(water_ml, 0),
+                    "coinjectors_ml": round(coinj_ml, 0),
+                    "coinjectors": coinj,
+                    "formaldehyde_ml": round(formaldehyde_ml, 0),
+                    "water_injection_ml": round(max(total_ml - formaldehyde_ml, 0), 0),
+                    "bottles": round(conc_ml / 473.0, 2),
+                    "desired_index_pct": c2,
+                    "fluid_index_pct": c1,
+                    "case_type": "Factor K y F (hoja del caso)",
+                    "adjustment": f"K {k_val:.3f} x F {f_val:.3f}",
+                }
+                summary = (
+                    f"Vtotal = MM x K x F = {lbm:.1f} kg x {k_val:.3f} L/kg x {f_val:.3f} = {results['total_l']} L: "
+                    f"concentrado {results['concentrate_ml']:.0f} mL"
+                    + (f" + co-inyectores {results['coinjectors_ml']:.0f} mL" if coinj else "")
+                    + f" + agua {results['water_ml']:.0f} mL"
+                )
+                return {"results": results, "summary": summary}
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
             factor = factors.get(case_type, 1.0)
             labels = {"normal": "Normal", "jaundice": "Ictericia", "edema": "Edema", "sheet": "Factor F (hoja del caso)"}
@@ -1058,6 +1109,7 @@ INPUT_LABELS = {
     "lbm_method": "Metodo masa magra",
     "factor_f": "Factor de correccion F",
     "k_factor": "Factor K (L/kg)",
+    "coinjectors": "Co-inyectores",
 }
 
 SEX_LABELS = {"male": "Masculino", "female": "Femenino"}
@@ -1367,6 +1419,14 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
                     v = CASE_TYPE_LABELS.get(str(v).lower(), v)
                 elif k in ("method", "lbm_method"):
                     v = METHOD_LABELS.get(str(v).lower(), v)
+                elif k == "coinjectors":
+                    if not v:
+                        continue
+                    v = "; ".join(
+                        f"{c.get('name', '')} ({c.get('reason', '')}) {c.get('volume_ml', '')} mL"
+                        for c in v if isinstance(c, dict))
+                elif k == "mode":
+                    continue
                 lines.append(f"{esc(INPUT_LABELS.get(k, k))}: {esc(v)}")
             return "<br/>".join(lines)
 

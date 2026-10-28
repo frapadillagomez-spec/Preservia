@@ -1,0 +1,36 @@
+{
+  "summary": "Tested the co-injector feature in the injection wizard (K x F mode), on both backend and frontend, plus the low-priority fixes. Backend: 17/17 pytest tests pass. This covers the new test_coinjectors.py and a regression run of test_injection_kf.py. With 80 kg, 175 cm, male, K 0.135, F 1.093, C2 2 and C1 25, a 473 mL co-injector gives total_l 8.93, concentrate_ml 714, coinjectors_ml 473 and water_ml 7741. Without co-injectors the water is 8214. An empty or blank name, or a volume of 0 or less, returns 400. When the concentrate plus co-injectors exceed the total, the API returns 400 ('superan'). Saving to a case stores inputs.coinjectors. The PDF text contains 'Co-inyectores: Humectante (Deshidratacion) 473 mL'. Frontend (375x667): the step-3 coinjectors section renders. The coinj-error messages for a missing name, reason or volume, and for a volume of 0, are correct. Entering 16 oz with coinj-unit-oz shows 473.2 mL, and coinj-total shows 473 mL. coinj-remove-0 removes the item. After compute, wiz-coinj-total shows 473 mL and wiz-water shows 7741 mL. wiz-save saves and returns to the case, and the persisted inputs were verified. Offline (route abort + set_offline): the local formulas give the same 7741 mL. The exceed error toast appears. Changing the co-injectors clears the old result. The offline save synced after reconnect, and the banner recovered in about 4 s. The conflict modal lists 'los datos del caso y la Hoja del caso (incluye firma)' when both were edited. The viewer's offline message is centered with horizontal padding. The KF card has no extra space and its labels are capitalized. No deprecated Expo packages were found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/calculate (injection kf)", "issue": "The co-injector 'reason' is optional on the backend but required by the UI. A non-list coinjectors value (e.g. 5) returns a raw Python message: 'Datos de calculo invalidos: 'int' object is not iterable'. A string such as 'foo' is silently ignored."},
+      {"endpoint": "POST /api/calculate", "issue": "Error text is missing Spanish accents ('inyeccion', 'calculo'), unlike the UI copy."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Wizard step 3", "issues": ["If the user types a co-injector name/volume but does not tap 'Agregar co-inyector' before 'Calcular volumen total', the draft is silently ignored. Consider auto-adding it or warning the user.", "Changing weight/height/C1/C2 in earlier steps does not clear an existing step-3 result (only co-injector changes do), so a stale result can be saved."]},
+      {"screen": "Global toast", "issues": ["When offline, the error toast covers the red offline banner and the wizard header/close button for a few seconds."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_coinjectors.py", "/app/backend/tests/test_injection_kf.py", "/app/test_reports/pytest/pytest_iter14.xml"],
+  "action_items": [
+    "(Low) Validate that coinjectors is a list on the backend and return a friendly 400. Decide whether 'reason' is required on the backend, to match the UI.",
+    "(Low) Warn about, or auto-add, an unsaved co-injector draft when tapping wiz-compute-volume.",
+    "(Low) Clear the step-3 result when weight/height/sex/method/C1/C2 change."
+  ],
+  "critical_code_review_comments": [
+    "compute.ts mirrors the backend K x F + co-injector logic exactly, including validation and rounding. The offline and online results matched (7741 mL).",
+    "wizard.tsx is 540 lines, which is acceptable. CoInjectors.tsx is clean, uses StyleSheet, has testIDs on all interactive elements, and its touch targets are 44-48 px."
+  ],
+  "updated_files": ["/app/backend/tests/test_coinjectors.py (new)"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% of the requested flows pass"},
+  "seed_data_creation": "Created TEST_Coinj (rutinario + obesidad_moderada, diabetes_vascular; 80 kg, 175 cm, male) with iter13_setup.py; the pytest suite also created TEST_ cases. All were deleted with iter13_setup.py cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "No auth; tap welcome-skip first. Create a case with sheet: python iter13_setup.py create NAME obesidad_moderada,diabetes_vascular gives K 0.135 and F 1.093 (8.93 L). Wizard flow: wiz-compute-lbm -> wiz-next-0 -> wiz-c2 2 / wiz-c1 25 -> wiz-next-1 -> coinjectors. Offline: page.route('**/api/**', abort) (+ context.set_offline) after the page has loaded. Use page.context.request for server-side edits mid-script.",
+  "rca_of_issue": ""
+}
