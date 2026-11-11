@@ -30,6 +30,7 @@ import { Button } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateTimeMx } from "@/src/utils/mxtime";
 import { KFSummary, KFSummaryCard } from "@/src/components/KFSummaryCard";
+import { ReportShare } from "@/src/components/ReportShare";
 import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
@@ -732,10 +733,7 @@ export default function CaseDetail() {
               loading={exporting}
               style={{ marginTop: spacing.md, alignSelf: "stretch" }}
             />
-            <Text style={styles.exportHint}>
-              Revisa el reporte antes de guardarlo; desde la vista previa podrás guardarlo en Archivos
-              (iCloud/dispositivo), Google Drive, Dropbox, OneDrive y más.
-            </Text>
+            <ReportShare caseId={String(id)} />
           </View>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
@@ -1141,14 +1139,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.sm,
     lineHeight: 21,
-  },
-  exportHint: {
-    color: colors.onSurfaceTertiary,
-    fontFamily: font.regular,
-    fontSize: fontSize.sm,
-    textAlign: "center",
-    marginTop: spacing.md,
-    lineHeight: 18,
   },
   summaryRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
   summaryItem: {
