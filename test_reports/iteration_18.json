@@ -1,0 +1,36 @@
+{
+  "summary": "Tested the new injection formula V1*C1 = Vtotal*Cpi, the 3-step wizard (Masa magra -> Vtotal -> Arterial y V1), save to case, and PDF regression. Backend: 39/39 pass across test_iter18_v1_formula.py, test_injection_kf.py, test_catalog_stats_pdf.py and test_coinjectors.py, after updating 1 old assertion that still expected the renamed label 'Concentrado V1'. With MM 60.5, K 0.135, F 1.093, C1 25 and Cpi 2: Vtotal 8.93 L, v1_l 0.71, instruction 'Agregar 0.71 L de Arterial Index 25% a la bomba de inyección'. With fluid_name the instruction includes the name. Water = Vtotal - V1 - co-injectors. C1 18.5 and Cpi 1.5 gives 'Index 18.5%'. Validation returns 400 for C1<=0, Cpi<=0, Cpi>C1, co-injectors over the total, and K or F out of range. K 0.1 and 0.18 are accepted. Offline compute.ts gave the same results and summary as the backend for 3 input sets (run with node --experimental-strip-types). UI at 375x667: the stepper shows the 3 new labels. Weight and height are prefilled from the case sheet. wiz-next-0 is disabled until LBM is computed (60.5 kg). wiz-kf-card shows K 0.135 and F 1.093, and wiz-vtotal = 8.93 L. wiz-next-1 is enabled with a filled sheet and disabled when the sheet is missing (wiz-sheet-missing shown). On step 3, wiz-compute-volume is disabled while empty. Picking a fluid template sets C1 = 25 and adds the name. Results: wiz-v1 0.71 L; wiz-instruction 'Agregar 0.71 L de Arterial TEST_Permaglo Index 25% a la bomba de inyección'; with a 500 mL co-injector wiz-water 7.71 L and wiz-coinj-total 500 mL. Changing Cpi clears the result. Recomputing at 3% gives 1.07 L and water 7.36 L. wiz-save saved and returned to the case, and the saved summary shows on the case. The PDF has 'Arterial V1 (V1 x C1 = Vtotal x C punto de inyeccion) 1.07 L ...' plus the instruction line. The Reporte tab preview loads (200). No deprecated packages found (expo-av, expo-barcode-scanner, expo-background-fetch).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/calculate (injection, kf)", "issue": "String inputs 'nan' or 'inf' for weight_kg or fluid_index_pct pass float() and then fail JSON serialization: 500 'Out of range float values are not JSON compliant' (also in backend.err.log from earlier runs). Should be rejected with a 400 (math.isfinite check)."},
+      {"endpoint": "GET /api/cases/{id}/report (PDF Resumen K y F)", "issue": "Water is shown in mL with a float suffix ('7357.0 mL') while the wizard shows liters (7.36 L). Other values also print as floats: 'C1 25.0%', 'C punto de inyeccion 3.0%', 'Total: 500.0 mL'. Cosmetic, but inconsistent with the new L-based legend."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Case detail wizard entry card", "issue": "The subtitle still describes the old flow: 'Masa magra → dilución → volumen (C1·V1=C2·V2)'. It should be e.g. 'Masa magra → Vtotal → Arterial y V1 (V1·C1 = Vtotal·Cpi)'. Reference: /app/frontend/app/case/[id].tsx:512", "testID": "open-wizard", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Wizard step 3", "issues": ["When Cpi > C1, 'Calcular V1' is silently disabled (ratio null) and no inline message says why."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter18_v1_formula.py", "/app/test_reports/pytest/pytest_iter18.xml"],
+  "action_items": [
+    "Update the wizard entry subtitle in app/case/[id].tsx:512 to the new formula and step names.",
+    "Backend calculate: reject non-finite numbers (nan/inf) with a 400 instead of a 500.",
+    "Optional: in the PDF Resumen K y F, show water in L (or format without '.0') to match the wizard legend; format the C1/Cpi percentages with :g."
+  ],
+  "critical_code_review_comments": [
+    "wizard.tsx computes the Vtotal it shows from the rounded LBM (1 decimal), while the backend uses the unrounded LBM. For some weight/height pairs wiz-vtotal may differ by 0.01 L from result.total_l. Consider showing total_l from the server, or using the unrounded LBM.",
+    "The comment at server.py:400-403 still describes the legacy C1·V1=C2·V2 bottle formula and does not mention the kf branch. Cosmetic."
+  ],
+  "updated_files": ["/app/backend/tests/test_catalog_stats_pdf.py (assertion 'Concentrado V1' -> 'Arterial V1' to match the intentional label rename)", "/app/backend/tests/test_iter18_v1_formula.py (new)"],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Created TEST_iter18_wizard (case_1fe7653e7d16), TEST_iter18_nosheet (case_7f295833cd5f) and fluid TEST_Permaglo (flu_94a6eba01c16). All deleted by id after testing.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Env var: EXPO_PUBLIC_BACKEND_URL. Create a case with K/F set using: python tests/iter13_setup.py create NAME obesidad_moderada,diabetes_vascular (gives K 0.135, F 1.093, MM 60.5, Vtotal 8.93 L). The wizard opens from the case via testID open-wizard. Create fluid templates with POST /api/fluids {name,index_pct}; the chip testID is fluid-<item_id>. The PDF is at GET /api/cases/{id}/report (pdf_base64)."
+}

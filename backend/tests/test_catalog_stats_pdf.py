@@ -87,7 +87,7 @@ class TestPdfKF:
             r = s.post(f"{API}/cases/{cid}/calculations", json={"type": "injection", "inputs": {**KF, "coinjectors": CI}})
             assert r.status_code == 200, r.text
             t = pdf_text(s, cid)
-            for frag in ["Resumen K y F", "Factor K", "Factor F", "Masa magra", "Vtotal", "Concentrado V1",
+            for frag in ["Resumen K y F", "Factor K", "Factor F", "Masa magra", "Vtotal", "Arterial V1",
                          "Co-inyectores", "TEST_Humectante - Deshidratacion: 473", "Total: 473",
                          "Agua a agregar en la bomba", "7741"]:
                 assert frag in t, f"missing {frag!r}"

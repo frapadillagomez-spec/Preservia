@@ -445,7 +445,14 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                     raise ValueError("El concentrado y los co-inyectores superan el volumen total de inyección")
                 water_ml = total_ml - conc_ml - coinj_ml
                 formaldehyde_ml = (c2 / 100.0) * total_ml
+                v1_l = round(conc_ml / 1000.0, 2)
+                fluid_name = str(inputs.get("fluid_name") or "").strip()[:80]
+                instruction = (f"Agregar {v1_l:.2f} L de Arterial {fluid_name + ' ' if fluid_name else ''}"
+                               f"Index {c1:g}% a la bomba de inyección")
                 results = {
+                    "v1_l": v1_l,
+                    "fluid_name": fluid_name,
+                    "instruction": instruction,
                     "lbm_kg": round(lbm, 1),
                     "lbm_method": lbm_method_label,
                     "k_factor": round(k_val, 3),
@@ -465,8 +472,8 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                     "adjustment": f"K {k_val:.3f} x F {f_val:.3f}",
                 }
                 summary = (
-                    f"Vtotal = MM x K x F = {lbm:.1f} kg x {k_val:.3f} L/kg x {f_val:.3f} = {results['total_l']} L: "
-                    f"concentrado {results['concentrate_ml']:.0f} mL"
+                    f"{instruction}. Vtotal = {results['total_l']} L (MM {lbm:.1f} kg x K {k_val:.3f} x F {f_val:.3f}); "
+                    f"V1 = Vtotal x Cpi / C1 = {results['total_l']} L x {c2:g}% / {c1:g}% = {v1_l:.2f} L"
                     + (f" + co-inyectores {results['coinjectors_ml']:.0f} mL" if coinj else "")
                     + f" + agua {results['water_ml']:.0f} mL"
                 )
@@ -1294,8 +1301,8 @@ async def restore_backup(payload: Dict[str, Any], user: Dict[str, Any] = Depends
 
 # ----------------------------- PDF Report -----------------------------
 INPUT_LABELS = {
-    "desired_index_pct": "Concentracion de formaldehido inyectado (C2 %)",
-    "fluid_index_pct": "Index de Fluido Concentrado (C1 %)",
+    "desired_index_pct": "Concentracion en el punto de inyeccion (%)",
+    "fluid_index_pct": "Index del Arterial (C1 %)",
     "concentrate_ml": "Volumen Botella Concentrado (V1 mL)",
     "weight_kg": "Peso (kg)",
     "height_cm": "Estatura (cm)",
@@ -1624,13 +1631,17 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
             r = inj.get("results") or {}
             kadd("Volumen total (Vtotal = MM x K x F)",
                  f"{r.get('total_l')} L = {r.get('lbm_kg')} kg x {r.get('k_factor')} L/kg x {r.get('factor_f')}")
-            kadd("Concentrado V1 (C2 x Vtotal / C1)",
-                 f"{r.get('concentrate_ml')} mL (C1 {r.get('fluid_index_pct')}% -> C2 {r.get('desired_index_pct')}%)")
+            v1_l = r.get("v1_l")
+            if v1_l is None and r.get("concentrate_ml") is not None:
+                v1_l = round(float(r["concentrate_ml"]) / 1000.0, 2)
+            kadd("Arterial V1 (V1 x C1 = Vtotal x C punto de inyeccion)",
+                 f"{v1_l} L (C1 {float(r.get('fluid_index_pct') or 0):g}% -> C punto de inyeccion {float(r.get('desired_index_pct') or 0):g}%)"
+                 + (f"\n{r['instruction']}" if r.get("instruction") else ""))
             co = r.get("coinjectors") or []
             kadd("Co-inyectores", "\n".join(
                 f"{c.get('name')} - {c.get('reason')}: {c.get('volume_ml')} mL" for c in co
             ) + f"\nTotal: {r.get('coinjectors_ml', 0)} mL" if co else "Ninguno")
-            kadd("Agua a agregar en la bomba", f"{r.get('water_ml')} mL (Vtotal - V1 - co-inyectores)")
+            kadd("Agua a agregar en la bomba", f"{float(r.get('water_ml') or 0) / 1000.0:.2f} L (Vtotal - V1 - co-inyectores)")
         elif kf.get("volume_l") is not None:
             kadd("Volumen recomendado (MM x K x F)", f"{kf['volume_l']:.2f} L")
         kt = Table(krows, colWidths=[55 * mm, 110 * mm])

@@ -19,7 +19,7 @@ import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
 import { CoInjector, CoInjectors } from "@/src/components/CoInjectors";
 import { FluidTemplates } from "@/src/components/FluidTemplates";
 
-const STEPS = ["Masa magra", "Dilución", "Volumen"];
+const STEPS = ["Masa magra", "Vtotal", "Arterial y V1"];
 
 const LBM_METHOD_OPTS = [
   { key: "average", label: "Promedio (3)" },
@@ -72,6 +72,7 @@ export default function Wizard() {
   const kVal = sheetInfo?.general?.avg ?? null;
   const fVal = sheetInfo?.factor?.f ?? null;
   const sheetReady = kVal !== null && fVal !== null;
+  const vtotal = sheetReady && lbm !== null ? Math.round(lbm * kVal! * fVal! * 100) / 100 : null;
 
   const injectionInputs = () => ({
     weight_kg: num(weight),
@@ -275,57 +276,7 @@ export default function Wizard() {
 
           {step === 1 && (
             <>
-              <Text style={styles.stepTitle}>Paso 2 · Concentración / Dilución</Text>
-              <Text style={styles.stepSub}>C1·V1 = C2·V2 — define el índice deseado y el del fluido.</Text>
-              <Field
-                testID="wiz-c2"
-                label="Índice deseado C2 (%)"
-                value={c2}
-                onChangeText={setC2}
-                keyboardType="decimal-pad"
-                placeholder="Ej. 2"
-              />
-              <FluidTemplates
-                c1={c1}
-                onPick={(idx, name) => {
-                  setC1(idx);
-                  setFluidName(name);
-                  setResult(null);
-                }}
-              />
-              <Field
-                testID="wiz-c1"
-                label={`Índice del fluido concentrado C1 (%)${fluidName ? ` · ${fluidName}` : ""}`}
-                value={c1}
-                onChangeText={(t) => {
-                  setC1(t);
-                  setFluidName("");
-                  setResult(null);
-                }}
-                keyboardType="decimal-pad"
-                placeholder="Ej. 25"
-              />
-              <Text style={styles.hintLine}>
-                El volumen de concentrado (V1) se calcula en el paso 3 a partir del volumen total: V1 = C2·Vtotal / C1.
-              </Text>
-              {ratio && (
-                <View testID="wiz-ratio-result" style={styles.resultCard}>
-                  <Text style={styles.resultLabel}>Relación de dilución</Text>
-                  <Text style={styles.resultValue}>
-                    {ratio.concentratePct.toFixed(1)}% concentrado · {ratio.waterPct.toFixed(1)}% agua
-                  </Text>
-                  <Text style={styles.resultHint}>
-                    Por cada 1000 mL: {(ratio.concentratePct * 10).toFixed(0)} mL concentrado +{" "}
-                    {(ratio.waterPct * 10).toFixed(0)} mL agua
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <Text style={styles.stepTitle}>Paso 3 · Volumen total de inyección</Text>
+              <Text style={styles.stepTitle}>Paso 2 · Volumen total recomendado</Text>
               <Text style={styles.stepSub}>Vtotal = Masa magra × K × F, con K y F de la Hoja del caso.</Text>
               {sheetReady ? (
                 <View testID="wiz-kf-card" style={[styles.resultCard, styles.kfCard]}>
@@ -347,6 +298,12 @@ export default function Wizard() {
                     K: {sheetInfo!.general!.label} · F: {sheetInfo!.factor!.dominant.label}
                     {sheetInfo!.factor!.secondary ? ` (${sheetInfo!.factor!.adjustmentPct > 0 ? "+" : ""}${sheetInfo!.factor!.adjustmentPct}% ${sheetInfo!.factor!.secondary.label})` : ""}
                   </Text>
+                  {vtotal !== null && (
+                    <>
+                      <Text style={[styles.resultLabel, { marginTop: spacing.lg }]}>Vtotal recomendado</Text>
+                      <Text testID="wiz-vtotal" style={styles.resultValue}>{vtotal.toFixed(2)} L</Text>
+                    </>
+                  )}
                 </View>
               ) : (
                 <View testID="wiz-sheet-missing" style={[styles.resultCard, styles.kfCard]}>
@@ -369,35 +326,77 @@ export default function Wizard() {
                   )}
                 </View>
               )}
-              {sheetReady && (
-                <CoInjectors
-                  items={coinj}
-                  onChange={(items) => {
-                    setCoinj(items);
-                    setResult(null);
-                  }}
-                />
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <Text style={styles.stepTitle}>Paso 3 · Arterial y V1</Text>
+              <Text style={styles.stepSub}>
+                V1 × C1 = Vtotal × C punto de inyección → V1 = Vtotal × C punto de inyección ÷ C1
+              </Text>
+              <FluidTemplates
+                c1={c1}
+                onPick={(idx, name) => {
+                  setC1(idx);
+                  setFluidName(name);
+                  setResult(null);
+                }}
+              />
+              <Field
+                testID="wiz-c1"
+                label={`Index del Arterial C1 (%)${fluidName ? ` · ${fluidName}` : ""}`}
+                value={c1}
+                onChangeText={(t) => {
+                  setC1(t);
+                  setFluidName("");
+                  setResult(null);
+                }}
+                keyboardType="decimal-pad"
+                placeholder="Ej. 25"
+              />
+              <Field
+                testID="wiz-c2"
+                label="Concentración en el punto de inyección (%)"
+                value={c2}
+                onChangeText={setC2}
+                keyboardType="decimal-pad"
+                placeholder="Ej. 2"
+              />
+              <Text style={styles.hintLine}>Vtotal: {vtotal !== null ? `${vtotal.toFixed(2)} L` : "—"}</Text>
+              {num(c1) > 0 && num(c2) > num(c1) && (
+                <Text testID="wiz-c-error" style={[styles.hintLine, { color: colors.error }]}>
+                  La concentración en el punto de inyección no puede superar el Index del Arterial (C1).
+                </Text>
               )}
+              <CoInjectors
+                items={coinj}
+                onChange={(items) => {
+                  setCoinj(items);
+                  setResult(null);
+                }}
+              />
               <Button
                 testID="wiz-compute-volume"
-                label="Calcular volumen total"
+                label="Calcular V1"
                 variant="secondary"
                 icon="flask-outline"
                 onPress={computeVolume}
                 loading={busy3}
-                disabled={!sheetReady}
+                disabled={!sheetReady || !ratio}
               />
               {result && (
                 <View testID="wiz-volume-result" style={styles.resultCard}>
-                  <Text style={styles.resultLabel}>Volumen total de inyección</Text>
-                  <Text style={styles.resultValue}>{result.results.total_l} L</Text>
+                  <Text style={styles.resultLabel}>Arterial a agregar (V1)</Text>
+                  <Text testID="wiz-v1" style={styles.resultValue}>{result.results.v1_l} L</Text>
+                  <Text testID="wiz-instruction" style={styles.instruction}>{result.results.instruction}</Text>
                   <Text style={styles.resultHint}>
-                    {result.results.lbm_kg} kg × {result.results.k_factor} L/kg × {result.results.factor_f}
+                    {result.results.total_l} L × {result.results.desired_index_pct}% ÷ {result.results.fluid_index_pct}% = {result.results.v1_l} L
                   </Text>
                   <View style={styles.resultGrid}>
                     <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>Concentrado V1</Text>
-                      <Text style={styles.resultNum}>{result.results.concentrate_ml} mL</Text>
+                      <Text style={styles.resultKey}>Vtotal</Text>
+                      <Text style={styles.resultNum}>{result.results.total_l} L</Text>
                     </View>
                     <View style={styles.resultItem}>
                       <Text style={styles.resultKey}>Co-inyectores</Text>
@@ -405,20 +404,12 @@ export default function Wizard() {
                     </View>
                     <View style={styles.resultItem}>
                       <Text style={styles.resultKey}>Agua a agregar en bomba</Text>
-                      <Text testID="wiz-water" style={styles.resultNum}>{result.results.water_ml} mL</Text>
-                    </View>
-                    <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>Formaldehído</Text>
-                      <Text style={styles.resultNum}>{result.results.formaldehyde_ml} mL</Text>
-                    </View>
-                    <View style={styles.resultItem}>
-                      <Text style={styles.resultKey}>Botellas 16 oz</Text>
-                      <Text style={styles.resultNum}>{result.results.bottles}</Text>
+                      <Text testID="wiz-water" style={styles.resultNum}>
+                        {(result.results.water_ml / 1000).toFixed(2)} L
+                      </Text>
                     </View>
                   </View>
-                  <Text style={styles.resultHint}>
-                    C1 {result.results.fluid_index_pct}% → C2 {result.results.desired_index_pct}%
-                  </Text>
+                  <Text style={styles.resultHint}>Agua = Vtotal − V1 − co-inyectores</Text>
                 </View>
               )}
             </>
@@ -444,7 +435,7 @@ export default function Wizard() {
               testID="wiz-next-1"
               label="Siguiente"
               onPress={goNext}
-              disabled={!ratio}
+              disabled={vtotal === null}
               style={{ flex: 2 }}
             />
           )}
@@ -497,6 +488,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingTop: 0 },
   stepTitle: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.lg, marginBottom: spacing.xs },
   stepSub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.base, marginBottom: spacing.lg, lineHeight: 20 },
+  instruction: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.base, marginTop: spacing.sm, lineHeight: 22 },
   hintLine: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: -spacing.sm, marginBottom: spacing.md, lineHeight: 18 },
   selectorLabel: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.base, marginBottom: spacing.xs },
   methodRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },

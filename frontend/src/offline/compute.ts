@@ -126,7 +126,13 @@ export function computeLocal(type: string, inputs: Record<string, any>): { resul
       });
       const coMl = coinj.reduce((s: number, c: any) => s + c.volume_ml, 0);
       if (conc + coMl > tot) throw new Error("El concentrado y los co-inyectores superan el volumen total de inyección");
+      const v1L = r(conc / 1000, 2);
+      const fluidName = String(inputs.fluid_name || "").trim().slice(0, 80);
+      const instruction = `Agregar ${v1L.toFixed(2)} L de Arterial ${fluidName ? fluidName + " " : ""}Index ${c1}% a la bomba de inyección`;
       const res: Record<string, any> = {
+        v1_l: v1L,
+        fluid_name: fluidName,
+        instruction,
         lbm_kg: r(info.lbm, 1),
         lbm_method: METHOD_LABELS[info.method],
         k_factor: r(k, 3),
@@ -147,7 +153,7 @@ export function computeLocal(type: string, inputs: Record<string, any>): { resul
       };
       return {
         results: res,
-        summary: `Vtotal = MM x K x F = ${info.lbm.toFixed(1)} kg x ${k.toFixed(3)} L/kg x ${f.toFixed(3)} = ${res.total_l} L: concentrado ${res.concentrate_ml.toFixed(0)} mL${coinj.length ? ` + co-inyectores ${res.coinjectors_ml.toFixed(0)} mL` : ""} + agua ${res.water_ml.toFixed(0)} mL`,
+        summary: `${instruction}. Vtotal = ${res.total_l} L (MM ${info.lbm.toFixed(1)} kg x K ${k.toFixed(3)} x F ${f.toFixed(3)}); V1 = Vtotal x Cpi / C1 = ${res.total_l} L x ${c2}% / ${c1}% = ${v1L.toFixed(2)} L${coinj.length ? ` + co-inyectores ${res.coinjectors_ml.toFixed(0)} mL` : ""} + agua ${res.water_ml.toFixed(0)} mL`,
       };
     }
     const factor = factorOf();

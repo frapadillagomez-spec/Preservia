@@ -509,7 +509,7 @@ export default function CaseDetail() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.wizardTitle}>Cálculo de inyección</Text>
-              <Text style={styles.wizardSub}>Masa magra → dilución → volumen (C1·V1=C2·V2)</Text>
+              <Text style={styles.wizardSub}>Masa magra → Vtotal → Arterial y V1 (V1·C1 = Vtotal·Cpi)</Text>
             </View>
             <Ionicons name="arrow-forward" size={20} color={colors.onSurface} />
           </Pressable>
