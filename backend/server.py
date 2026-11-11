@@ -474,8 +474,8 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 summary = (
                     f"{instruction}. Vtotal = {results['total_l']} L (MM {lbm:.1f} kg x K {k_val:.3f} x F {f_val:.3f}); "
                     f"V1 = Vtotal x Cpi / C1 = {results['total_l']} L x {c2:g}% / {c1:g}% = {v1_l:.2f} L"
-                    + (f" + co-inyectores {results['coinjectors_ml']:.0f} mL" if coinj else "")
-                    + f" + agua {results['water_ml']:.0f} mL"
+                    + (f" + co-inyectores {results['coinjectors_ml'] / 1000.0:.3f} L" if coinj else "")
+                    + f" + agua {results['water_ml'] / 1000.0:.2f} L"
                 )
                 return {"results": results, "summary": summary}
             factors = {"normal": 1.0, "jaundice": 1.15, "edema": 0.85}
@@ -1639,8 +1639,8 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
                  + (f"\n{r['instruction']}" if r.get("instruction") else ""))
             co = r.get("coinjectors") or []
             kadd("Co-inyectores", "\n".join(
-                f"{c.get('name')} - {c.get('reason')}: {c.get('volume_ml')} mL" for c in co
-            ) + f"\nTotal: {r.get('coinjectors_ml', 0)} mL" if co else "Ninguno")
+                f"{c.get('name')} - {c.get('reason')}: {float(c.get('volume_ml') or 0) / 1000.0:.3f} L" for c in co
+            ) + f"\nTotal: {float(r.get('coinjectors_ml') or 0) / 1000.0:.3f} L" if co else "Ninguno")
             kadd("Agua a agregar en la bomba", f"{float(r.get('water_ml') or 0) / 1000.0:.2f} L (Vtotal - V1 - co-inyectores)")
         elif kf.get("volume_l") is not None:
             kadd("Volumen recomendado (MM x K x F)", f"{kf['volume_l']:.2f} L")
@@ -1677,7 +1677,7 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
                     if not v:
                         continue
                     v = "; ".join(
-                        f"{c.get('name', '')} ({c.get('reason', '')}) {c.get('volume_ml', '')} mL"
+                        f"{c.get('name', '')} ({c.get('reason', '')}) {float(c.get('volume_ml') or 0) / 1000.0:.3f} L"
                         for c in v if isinstance(c, dict))
                 elif k == "mode":
                     continue

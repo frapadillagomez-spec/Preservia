@@ -1,0 +1,29 @@
+{
+  "summary": "Tested pre-filling co-injectors from the case Bitácora and showing them in liters. Backend: 13/13 pass (new test_iter19_logbook_coinj.py with 3 tests, plus the iter18 regression). UI at 375x667: created a TEST_ case with K 0.135 and F 1.093, then added 7 logbook entries through Bitácora -> Registrar producto (DermaFix 31 16 oz, Icteroclean 8 oz, SilentForm 100 mL, BioFix 31 8 oz, OncoShield 4 oz, LeakFix 2 oz, and a powder in g). In wizard step 3 the list showed only 'Icteroclean · 0.237 L' and 'SilentForm · 0.100 L', both with reason 'Registrado en bitácora', and coinj-total showed 'Total co-inyectores: 0.337 L'. The excluded products and the powder were not in the list. Manual add works: 2 oz shows 0.059 L and 250 mL shows 0.250 L, and the total updates. Remove works. 'Guardar en mi catálogo' unchecked means the item is not saved to the catalog. Calcular V1 gave 0.71 L, wiz-coinj-total 0.396 L and water 7.82 L (= 8.93 - 0.71 - 0.396). Saving to the case worked. The PDF 'Resumen K y F' shows each co-injector in L and 'Total: 0.396 L'. The 'Calculos tecnicos' inputs also show L. One minor issue: the saved calculation summary still says mL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/calculate (injection kf) summary", "issue": "The summary text still uses mL: '+ co-inyectores 396 mL + agua 7818 mL' (server.py ~line 477-479). This text appears in the case Cálculos list (app/case/[id].tsx:540) and in the PDF 'Calculos tecnicos' Resultado column. It does not match the new rule that co-injectors are shown in liters."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter19_logbook_coinj.py", "/app/test_reports/pytest/pytest_iter19.xml"],
+  "action_items": [
+    "Optional: in server.py, change the injection kf summary to '+ co-inyectores {coinj_ml/1000:.3f} L + agua {water_ml/1000:.2f} L' so the case Cálculos list and PDF use liters everywhere."
+  ],
+  "critical_code_review_comments": [
+    "wizard.tsx:57-64: co-injectors are pre-filled only once (prefilled flag). If the logbook changes while the wizard is open (for example from another device), the list is not refreshed. Reopening the wizard fixes it. Acceptable, but worth knowing.",
+    "CoInjectors.tsx:24: exclusion is a substring match after removing spaces, hyphens and underscores. This correctly catches 'Bio Fix' and 'Derma-Fix', but would also exclude any product whose name only contains one of these words (e.g. 'Pre-LeakFix Cream')."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter19_logbook_coinj.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created TEST_iter19_coinj (pytest, auto-deleted), TEST_iter19_UI case_c6a55da51297 (deleted), and catalog item TEST_ManualCoinj (deleted by item_id). The catalog item TEST_Humectante already existed and was left untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Env var: EXPO_PUBLIC_BACKEND_URL. Create a K/F case with: python tests/iter13_setup.py create NAME obesidad_moderada,diabetes_vascular. Logbook testIDs: tab-logbook, add-log-button, log-product-input, log-form-liquid/powder, log-unit-oz/ml/g, log-qty-input, log-save-button. Wizard: open-wizard -> wiz-compute-lbm -> wiz-next-0 -> wiz-next-1 -> coinj-item-*, coinj-total, wiz-c1, wiz-c2, wiz-compute-volume, wiz-coinj-total, wiz-water, wiz-save. Manual co-injector add saves to the catalog by default; delete it afterwards."
+}

@@ -10,6 +10,7 @@ export type CaseSheetInfo = {
   weight: string;
   height: string;
   sex: "male" | "female" | "";
+  logbook: { product: string; form: string; quantity: number; unit: string }[];
 };
 
 /** Lee la hoja del caso para sugerir el Factor F y prellenar peso/estatura/sexo en las calculadoras. */
@@ -29,6 +30,7 @@ export function useCaseSheetInfo(caseId?: string): CaseSheetInfo | null {
             weight: String(sh.peso || "").trim(),
             height: String(sh.altura || "").trim(),
             sex: c.sex || "",
+            logbook: Array.isArray(c.logbook) ? c.logbook : [],
           });
         })
         .catch(() => {});

@@ -16,7 +16,7 @@ import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { useCaseSheetInfo } from "@/src/hooks/use-case-sheet-info";
-import { CoInjector, CoInjectors } from "@/src/components/CoInjectors";
+import { CoInjector, CoInjectors, coinjectorsFromLogbook, toL } from "@/src/components/CoInjectors";
 import { FluidTemplates } from "@/src/components/FluidTemplates";
 
 const STEPS = ["Masa magra", "Vtotal", "Arterial y V1"];
@@ -60,6 +60,7 @@ export default function Wizard() {
     setWeight((w) => w || sheetInfo.weight);
     setHeight((h) => h || sheetInfo.height);
     if (sheetInfo.sex) setSex(sheetInfo.sex);
+    setCoinj((c) => (c.length ? c : coinjectorsFromLogbook(sheetInfo.logbook)));
   }, [sheetInfo, prefilled]);
 
   const num = (s: string) => parseFloat((s || "").replace(",", "."));
@@ -400,7 +401,7 @@ export default function Wizard() {
                     </View>
                     <View style={styles.resultItem}>
                       <Text style={styles.resultKey}>Co-inyectores</Text>
-                      <Text testID="wiz-coinj-total" style={styles.resultNum}>{result.results.coinjectors_ml ?? 0} mL</Text>
+                      <Text testID="wiz-coinj-total" style={styles.resultNum}>{toL(result.results.coinjectors_ml ?? 0)}</Text>
                     </View>
                     <View style={styles.resultItem}>
                       <Text style={styles.resultKey}>Agua a agregar en bomba</Text>

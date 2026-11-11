@@ -10,6 +10,26 @@ export type CoInjector = { name: string; reason: string; volume_ml: number };
 type CatalogItem = CoInjector & { item_id: string };
 
 const OZ_ML = 29.5735;
+// Productos de la bitácora que NO cuentan como co-inyectores.
+const EXCLUDED = ["dermafix", "biofix", "oncoshield", "leakfix"];
+
+export const toL = (ml: number) => `${(ml / 1000).toFixed(3)} L`;
+
+/** Co-inyectores tomados de la bitácora: líquidos (mL u oz), excepto DermaFix, BioFix, OncoShield y LeakFix. */
+export function coinjectorsFromLogbook(
+  logbook: { product: string; form: string; quantity: number; unit: string }[],
+): CoInjector[] {
+  return logbook
+    .filter((e) => {
+      const key = String(e.product || "").toLowerCase().replace(/[\s\-_]/g, "");
+      return (e.unit === "ml" || e.unit === "oz") && e.quantity > 0 && !EXCLUDED.some((x) => key.includes(x));
+    })
+    .map((e) => ({
+      name: e.product,
+      reason: "Registrado en bitácora",
+      volume_ml: Math.round((e.unit === "oz" ? e.quantity * OZ_ML : e.quantity) * 10) / 10,
+    }));
+}
 
 type Props = { items: CoInjector[]; onChange: (items: CoInjector[]) => void };
 
@@ -67,7 +87,7 @@ export function CoInjectors({ items, onChange }: Props) {
   return (
     <View testID="coinjectors" style={styles.box}>
       <Text style={styles.title}>Co-inyectores</Text>
-      <Text style={styles.hint}>Su volumen se resta del volumen total para obtener el agua a agregar en la bomba.</Text>
+      <Text style={styles.hint}>Se toman de la bitácora del caso (excepto DermaFix, BioFix, OncoShield y LeakFix). Su volumen se resta del volumen total para obtener el agua a agregar en la bomba.</Text>
 
       {catalog.length > 0 && (
         <View style={{ marginBottom: spacing.md }}>
@@ -87,7 +107,7 @@ export function CoInjectors({ items, onChange }: Props) {
               >
                 <Ionicons name={manage ? "close-circle" : "add-circle-outline"} size={16} color={manage ? colors.error : colors.onSurfaceSecondary} />
                 <View>
-                  <Text style={styles.catName}>{c.name} · {c.volume_ml} mL</Text>
+                  <Text style={styles.catName}>{c.name} · {toL(c.volume_ml)}</Text>
                   {!!c.reason && <Text style={styles.catReason} numberOfLines={1}>{c.reason}</Text>}
                 </View>
               </Pressable>
@@ -98,7 +118,7 @@ export function CoInjectors({ items, onChange }: Props) {
       {items.map((c, i) => (
         <View key={`${c.name}-${i}`} testID={`coinj-item-${i}`} style={styles.item}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.itemName}>{c.name} · {c.volume_ml} mL</Text>
+            <Text style={styles.itemName}>{c.name} · {toL(c.volume_ml)}</Text>
             <Text style={styles.itemReason}>{c.reason}</Text>
           </View>
           <Pressable testID={`coinj-remove-${i}`} onPress={() => onChange(items.filter((_, j) => j !== i))} hitSlop={12} style={styles.remove}>
@@ -107,7 +127,7 @@ export function CoInjectors({ items, onChange }: Props) {
         </View>
       ))}
       {items.length > 0 && (
-        <Text testID="coinj-total" style={styles.total}>Total co-inyectores: {Math.round(total)} mL</Text>
+        <Text testID="coinj-total" style={styles.total}>Total co-inyectores: {toL(total)}</Text>
       )}
 
       <Field testID="coinj-name" label="Nombre del co-inyector" value={name} onChangeText={setName} placeholder="Ej. Co-inyector humectante" />

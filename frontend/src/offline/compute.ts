@@ -153,7 +153,7 @@ export function computeLocal(type: string, inputs: Record<string, any>): { resul
       };
       return {
         results: res,
-        summary: `${instruction}. Vtotal = ${res.total_l} L (MM ${info.lbm.toFixed(1)} kg x K ${k.toFixed(3)} x F ${f.toFixed(3)}); V1 = Vtotal x Cpi / C1 = ${res.total_l} L x ${c2}% / ${c1}% = ${v1L.toFixed(2)} L${coinj.length ? ` + co-inyectores ${res.coinjectors_ml.toFixed(0)} mL` : ""} + agua ${res.water_ml.toFixed(0)} mL`,
+        summary: `${instruction}. Vtotal = ${res.total_l} L (MM ${info.lbm.toFixed(1)} kg x K ${k.toFixed(3)} x F ${f.toFixed(3)}); V1 = Vtotal x Cpi / C1 = ${res.total_l} L x ${c2}% / ${c1}% = ${v1L.toFixed(2)} L${coinj.length ? ` + co-inyectores ${(res.coinjectors_ml / 1000).toFixed(3)} L` : ""} + agua ${(res.water_ml / 1000).toFixed(2)} L`,
       };
     }
     const factor = factorOf();
