@@ -227,6 +227,22 @@ export default function Library() {
 
       {tab === "reference" && (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          <Pressable
+            testID="ref-converter"
+            style={({ pressed }) => [styles.refCard, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push("/library/converter")}
+          >
+            <View style={styles.refIcon}>
+              <Ionicons name="swap-horizontal-outline" size={22} color={colors.onSurface} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.refTitle}>Conversor de unidades</Text>
+              <Text style={styles.refSummary} numberOfLines={2}>
+                Masa, volumen, presión, longitud, caudal, temperatura y tiempo.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
+          </Pressable>
           {REFERENCE.map((a) => (
             <Pressable
               key={a.id}
