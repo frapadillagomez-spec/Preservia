@@ -237,7 +237,13 @@ export default function Inventory() {
                 <View style={styles.lotsBox}>
                   {(f.lots || []).map((l) => (
                     <View key={l.lot_id} testID={`inv-lot-${l.lot_id}`} style={styles.lotRow}>
-                      <Text style={styles.orderName} numberOfLines={1}>Lote {l.lot}</Text>
+                      <Pressable
+                        testID={`inv-lot-trace-${l.lot_id}`}
+                        onPress={() => router.push(`/library/traceability?lot=${encodeURIComponent(l.lot)}&product=${encodeURIComponent(f.name)}`)}
+                        style={{ flex: 1, minHeight: 44, justifyContent: "center" }}
+                      >
+                        <Text style={[styles.orderName, { textDecorationLine: "underline" }]} numberOfLines={1}>Lote {l.lot}</Text>
+                      </Pressable>
                       <Text style={styles.lotStock}>{l.stock}</Text>
                       <Pressable testID={`inv-lot-minus-${l.lot_id}`} onPress={() => patchLot(f, l.lot_id, -1)} style={styles.round}>
                         <Ionicons name="remove" size={18} color={colors.onSurface} />

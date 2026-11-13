@@ -260,6 +260,22 @@ export default function Library() {
             <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
           </Pressable>
           <Pressable
+            testID="ref-traceability"
+            style={({ pressed }) => [styles.refCard, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push("/library/traceability")}
+          >
+            <View style={styles.refIcon}>
+              <Ionicons name="git-network-outline" size={22} color={colors.onSurface} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.refTitle}>Trazabilidad por lote</Text>
+              <Text style={styles.refSummary} numberOfLines={2}>
+                En qué casos se usó cada lote, para responder rápido a un retiro del fabricante.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
+          </Pressable>
+          <Pressable
             testID="ref-suppliers"
             style={({ pressed }) => [styles.refCard, pressed && { opacity: 0.85 }]}
             onPress={() => router.push("/library/suppliers")}

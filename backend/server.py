@@ -1443,6 +1443,41 @@ async def delete_lot(item_id: str, lot_id: str, user: Dict[str, Any] = Depends(g
     return {"ok": True, "stock_total": total}
 
 
+# ---------- Trazabilidad por lote ----------
+@api_router.get("/lots/trace")
+async def trace_lots(q: str = "", product: str = "", user: Dict[str, Any] = Depends(get_current_user)):
+    """Casos en que se usó cada lote (búsqueda por número de lote y/o producto)."""
+    ql, pl = q.strip().lower(), product.strip().lower()
+    cases = await db.cases.find({"user_id": user["user_id"], "logbook.0": {"$exists": True}},
+                                {"_id": 0, "case_id": 1, "case_number": 1, "deceased_name": 1, "name": 1, "date": 1,
+                                 "created_at": 1, "logbook": 1}).to_list(5000)
+    groups: Dict[str, Dict[str, Any]] = {}
+    for c in cases:
+        for e in c.get("logbook") or []:
+            lot = str(e.get("lot") or "").strip()
+            prod = str(e.get("product") or "").strip()
+            if not lot:
+                continue
+            if ql and ql not in lot.lower():
+                continue
+            if pl and pl not in prod.lower():
+                continue
+            key = f"{prod.lower()}|{lot.lower()}"
+            g = groups.setdefault(key, {"product": prod, "lot": lot, "uses": []})
+            g["uses"].append({
+                "case_id": c["case_id"], "case_number": c.get("case_number") or "",
+                "deceased_name": c.get("deceased_name") or c.get("name") or "",
+                "date": c.get("date") or c.get("created_at") or "",
+                "quantity": e.get("quantity"), "unit": e.get("unit"), "category": e.get("category") or "bitacora",
+                "used_at": e.get("created_at") or "",
+            })
+    out = sorted(groups.values(), key=lambda g: (g["product"].lower(), g["lot"].lower()))
+    for g in out:
+        g["uses"].sort(key=lambda u: u["used_at"], reverse=True)
+        g["cases"] = len({u["case_id"] for u in g["uses"]})
+    return {"items": out[:300]}
+
+
 # ---------- Proveedores ----------
 @api_router.get("/suppliers")
 async def list_suppliers(user: Dict[str, Any] = Depends(get_current_user)):
