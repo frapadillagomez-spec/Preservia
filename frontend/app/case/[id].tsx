@@ -32,6 +32,7 @@ import { fmtDateTimeMx } from "@/src/utils/mxtime";
 import { KFSummary, KFSummaryCard } from "@/src/components/KFSummaryCard";
 import { ReportShare } from "@/src/components/ReportShare";
 import { MixSheet } from "@/src/components/MixSheet";
+import { CaseCost } from "@/src/components/CaseCost";
 import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; results?: Record<string, any>; mix_confirmed?: boolean; created_at: string };
@@ -739,7 +740,12 @@ export default function CaseDetail() {
               caseId={String(id)}
               hasMix={data.calculations.some((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)}
               confirmed={!!([...data.calculations].reverse().find((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)?.mix_confirmed)}
+              canUndo={data.calculations.some((c) => c.mix_confirmed)}
               onConfirmed={load}
+            />
+            <CaseCost
+              caseId={String(id)}
+              refreshKey={`${data.calculations.filter((c) => c.mix_confirmed).length}-${(data.logbook || []).length}`}
             />
           </View>
           <View style={styles.summaryRow}>

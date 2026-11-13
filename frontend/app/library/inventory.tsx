@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
+import { mxn } from "@/src/components/CaseCost";
+import { isLow, minStock, StockFluid } from "@/src/components/LowStockBanner";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
-type Fluid = { item_id: string; name: string; index_pct: number; bottle_ml?: number; stock_bottles?: number };
+type Fluid = StockFluid;
 
 const n = (s: string) => parseFloat((s || "").replace(",", "."));
 
@@ -23,6 +25,36 @@ export default function Inventory() {
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", index: "", bottle: "473", stock: "" });
+  const [cfg, setCfg] = useState<Record<string, { min: string; price: string }>>({});
+  const [openCfg, setOpenCfg] = useState<string | null>(null);
+  const [shopping, setShopping] = useState(false);
+  const [order, setOrder] = useState<Record<string, string>>({});
+
+  const saveCfg = async (f: Fluid) => {
+    const c = cfg[f.item_id] || { min: "", price: "" };
+    try {
+      const r = await api.patch<{ item: Fluid }>(`/fluids/${f.item_id}`, {
+        min_stock: c.min === "" ? undefined : n(c.min),
+        price_per_bottle: c.price === "" ? undefined : n(c.price),
+      });
+      setItems((list) => (list || []).map((x) => (x.item_id === f.item_id ? { ...x, ...r.item } : x)));
+      setOpenCfg(null);
+      showToast("Ajustes guardados", "success");
+    } catch (e: any) {
+      showToast(e?.detail || "No se pudo guardar (requiere conexión)", "error");
+    }
+  };
+
+  const sendOrder = () => {
+    const lines = (items || [])
+      .filter((f) => n(order[f.item_id] ?? "") > 0)
+      .map((f) => `• ${f.name} (Index ${f.index_pct}%, ${f.bottle_ml || 473} mL): ${n(order[f.item_id])} botella${n(order[f.item_id]) === 1 ? "" : "s"}`);
+    if (lines.length === 0) {
+      showToast("Escribe cuántas botellas pedir de al menos un fluido", "error");
+      return;
+    }
+    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(["*Pedido de fluidos*", ...lines].join("\n"))}`);
+  };
 
   const load = useCallback(() => {
     api
@@ -83,7 +115,7 @@ export default function Inventory() {
         bottomOffset={24}
       >
         <Text style={styles.hint}>
-          Las botellas se descuentan (fracción exacta) al tocar “Confirmar mezcla” en el Reporte del caso.
+          Las botellas se descuentan (fracción exacta) al tocar “Confirmar mezcla” en el Reporte del caso. Verás un aviso en Inicio cuando un fluido llegue a su mínimo (2 si no lo cambias).
         </Text>
         {items === null ? (
           <ActivityIndicator color={colors.onSurface} style={{ marginTop: spacing.xl }} />
@@ -92,14 +124,18 @@ export default function Inventory() {
         ) : (
           items.map((f) => {
             const stock = f.stock_bottles ?? 0;
+            const low = isLow(f);
             return (
               <View key={f.item_id} testID={`inv-item-${f.item_id}`} style={styles.card}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{f.name}</Text>
-                  <Text style={styles.sub}>Index {f.index_pct}% · botella {f.bottle_ml || 473} mL</Text>
-                  <Text testID={`inv-stock-${f.item_id}`} style={[styles.stock, stock <= 1 && { color: colors.error }]}>
+                  <Text style={styles.sub}>
+                    Index {f.index_pct}% · botella {f.bottle_ml || 473} mL · mínimo {minStock(f)}
+                    {f.price_per_bottle !== undefined ? ` · ${mxn(f.price_per_bottle)}/botella` : ""}
+                  </Text>
+                  <Text testID={`inv-stock-${f.item_id}`} style={[styles.stock, low && { color: colors.error }]}>
                     {stock} botella{stock === 1 ? "" : "s"}
-                    {stock <= 1 ? " · existencia baja" : ""}
+                    {low ? " · por agotarse" : ""}
                   </Text>
                 </View>
                 <View style={styles.controls}>
@@ -129,6 +165,37 @@ export default function Inventory() {
                     <Text style={styles.setText}>Fijar</Text>
                   </Pressable>
                 </View>
+                {openCfg === f.item_id ? (
+                  <View style={styles.cfgBox}>
+                    <View style={styles.setRow}>
+                      <TextInput
+                        testID={`inv-min-${f.item_id}`}
+                        value={cfg[f.item_id]?.min ?? String(minStock(f))}
+                        onChangeText={(t) => setCfg((c) => ({ ...c, [f.item_id]: { min: t, price: c[f.item_id]?.price ?? String(f.price_per_bottle ?? "") } }))}
+                        placeholder="Mínimo"
+                        placeholderTextColor={colors.onSurfaceTertiary}
+                        keyboardType="decimal-pad"
+                        style={styles.input}
+                      />
+                      <TextInput
+                        testID={`inv-price-${f.item_id}`}
+                        value={cfg[f.item_id]?.price ?? String(f.price_per_bottle ?? "")}
+                        onChangeText={(t) => setCfg((c) => ({ ...c, [f.item_id]: { min: c[f.item_id]?.min ?? String(minStock(f)), price: t } }))}
+                        placeholder="Precio/botella MXN"
+                        placeholderTextColor={colors.onSurfaceTertiary}
+                        keyboardType="decimal-pad"
+                        style={styles.input}
+                      />
+                    </View>
+                    <Text style={styles.sub}>Mínimo de botellas para avisar · precio por botella (MXN)</Text>
+                    <Button testID={`inv-cfg-save-${f.item_id}`} label="Guardar ajustes" onPress={() => saveCfg(f)} style={{ marginTop: spacing.sm }} />
+                  </View>
+                ) : (
+                  <Pressable testID={`inv-cfg-${f.item_id}`} onPress={() => setOpenCfg(f.item_id)} style={styles.cfgLink}>
+                    <Ionicons name="settings-outline" size={16} color={colors.onSurface} />
+                    <Text style={styles.cfgText}>Mínimo y precio</Text>
+                  </Pressable>
+                )}
               </View>
             );
           })
@@ -148,6 +215,50 @@ export default function Inventory() {
         ) : (
           <Button testID="inv-add" label="Agregar fluido" icon="add-circle-outline" variant="outline" onPress={() => setAdding(true)} style={{ marginTop: spacing.md }} />
         )}
+
+        {!!items?.length && (
+          <View style={styles.addBox}>
+            <Pressable testID="inv-shopping-toggle" onPress={() => setShopping((s) => !s)} style={styles.cfgLink}>
+              <Ionicons name="cart-outline" size={18} color={colors.onSurface} />
+              <Text style={styles.name}>Lista de compras</Text>
+              <Ionicons name={shopping ? "chevron-up" : "chevron-down"} size={18} color={colors.onSurfaceTertiary} style={{ marginLeft: "auto" }} />
+            </Pressable>
+            {shopping && (
+              <>
+                <Text style={styles.sub}>Escribe cuántas botellas pedir. Los fluidos por agotarse aparecen primero.</Text>
+                {[...items].sort((a, b) => Number(isLow(b)) - Number(isLow(a))).map((f) => (
+                  <View key={f.item_id} style={styles.orderRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.orderName}>{f.name}</Text>
+                      <Text style={[styles.sub, isLow(f) && { color: colors.error }]}>
+                        Existencia {f.stock_bottles ?? "—"}{isLow(f) ? " · por agotarse" : ""}
+                      </Text>
+                    </View>
+                    <TextInput
+                      testID={`inv-order-${f.item_id}`}
+                      value={order[f.item_id] ?? ""}
+                      onChangeText={(t) => setOrder((o) => ({ ...o, [f.item_id]: t }))}
+                      placeholder="0"
+                      placeholderTextColor={colors.onSurfaceTertiary}
+                      keyboardType="decimal-pad"
+                      style={[styles.input, { flex: 0, width: 80, textAlign: "center" }]}
+                    />
+                  </View>
+                ))}
+                <Button testID="inv-order-send" label="Enviar por WhatsApp" icon="logo-whatsapp" onPress={sendOrder} style={{ marginTop: spacing.sm }} />
+              </>
+            )}
+          </View>
+        )}
+
+        <Button
+          testID="inv-prices"
+          label="Precios de co-inyectores y cavidades"
+          icon="pricetags-outline"
+          variant="ghost"
+          onPress={() => router.push("/library/prices")}
+          style={{ marginTop: spacing.md }}
+        />
       </KeyboardAwareScrollView>
     </View>
   );
@@ -193,4 +304,9 @@ const styles = StyleSheet.create({
   setBtn: { minHeight: 44, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.surfaceInverse, justifyContent: "center" },
   setText: { color: colors.onSurfaceInverse, fontFamily: font.semibold, fontSize: fontSize.sm },
   addBox: { marginTop: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md },
+  cfgBox: { width: "100%" },
+  cfgLink: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 44 },
+  cfgText: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
+  orderRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  orderName: { color: colors.onSurface, fontFamily: font.medium, fontSize: fontSize.base },
 });

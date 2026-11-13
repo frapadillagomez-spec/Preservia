@@ -1288,6 +1288,72 @@ async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_
     return {"item": item}
 
 
+@api_router.patch("/fluids/{item_id}")
+async def update_fluid_settings(item_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    """Mínimo de existencia (alerta) y precio por botella (MXN) de un fluido."""
+    f = await db.fluid_templates.find_one({"item_id": item_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not f:
+        raise HTTPException(status_code=404, detail="Fluido no encontrado")
+    upd: Dict[str, Any] = {}
+    try:
+        if payload.get("min_stock") not in (None, ""):
+            upd["min_stock"] = round(min(max(float(payload["min_stock"]), 0.0), 10000.0), 2)
+        if payload.get("price_per_bottle") not in (None, ""):
+            upd["price_per_bottle"] = round(min(max(float(payload["price_per_bottle"]), 0.0), 1000000.0), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Valor no válido")
+    if upd:
+        upd["updated_at"] = now_iso()
+        await db.fluid_templates.update_one({"item_id": item_id}, {"$set": upd})
+    return {"item": {**f, **upd}}
+
+
+# ---------- Precios de productos (co-inyectores, cavidades, otros) ----------
+PRICE_UNITS = {"ml", "oz", "g"}
+PRICE_CATS = {"coinyector": "Co-inyectores", "cavidad": "Cavidades", "otro": "Otros"}
+
+
+@api_router.get("/prices")
+async def list_prices(user: Dict[str, Any] = Depends(get_current_user)):
+    items = await db.product_prices.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0, "name_key": 0}).sort("name", 1).to_list(500)
+    return {"items": items}
+
+
+@api_router.post("/prices")
+async def add_price(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    name = str(payload.get("name") or "").strip()[:80]
+    unit = str(payload.get("unit") or "ml").lower()
+    cat = str(payload.get("category") or "otro").lower()
+    try:
+        price = float(payload.get("price") or 0)
+        size = float(payload.get("size") or 0)
+    except (TypeError, ValueError):
+        price, size = -1, 0
+    if not name or price < 0 or size <= 0 or unit not in PRICE_UNITS or cat not in PRICE_CATS:
+        raise HTTPException(status_code=400, detail="Escribe nombre, precio, presentación (mayor que 0) y unidad válidos")
+    doc = {"name": name, "name_key": name.lower(), "price": round(price, 2), "size": round(size, 2), "unit": unit,
+           "category": cat, "updated_at": now_iso()}
+    existing = await db.product_prices.find_one({"user_id": user["user_id"], "name_key": doc["name_key"]}, {"_id": 0})
+    if existing:
+        await db.product_prices.update_one({"item_id": existing["item_id"]}, {"$set": doc})
+        item = {**existing, **doc}
+    else:
+        item = {"item_id": f"prc_{uuid.uuid4().hex[:12]}", "user_id": user["user_id"], **doc}
+        await db.product_prices.insert_one(dict(item))
+    item.pop("_id", None)
+    item.pop("user_id", None)
+    item.pop("name_key", None)
+    return {"item": item}
+
+
+@api_router.delete("/prices/{item_id}")
+async def delete_price(item_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    res = await db.product_prices.delete_one({"item_id": item_id, "user_id": user["user_id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Precio no encontrado")
+    return {"ok": True}
+
+
 @api_router.patch("/fluids/{item_id}/stock")
 async def update_fluid_stock(item_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
     """Inventario: suma/resta botellas (delta) o fija la existencia (set)."""
@@ -2036,7 +2102,7 @@ async def confirm_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_u
     for product, qty in ((art_label, float(r.get("concentrate_ml") or 0)), ("Agua", float(r.get("water_ml") or 0))):
         if qty > 0:
             entries.append({"log_id": f"log_{uuid.uuid4().hex[:10]}", "product": product, "form": "liquid",
-                            "quantity": round(qty, 2), "unit": "ml", "source": "mix", "created_at": ts})
+                            "quantity": round(qty, 2), "unit": "ml", "source": "mix", "mix_calc_id": calc["calc_id"], "created_at": ts})
     bottles = round(float(r.get("bottles") or 0), 2)
     res = await db.cases.update_one(
         {"case_id": case_id, "calculations": {"$elemMatch": {"calc_id": calc["calc_id"], "mix_confirmed": {"$ne": True}}}},
@@ -2054,9 +2120,117 @@ async def confirm_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_u
             projection={"_id": 0}, return_document=True,
         )
     if fluid:
-        stock_left = max(round(float(fluid.get("stock_bottles") or 0), 2), 0.0)
+        raw_after = float(fluid.get("stock_bottles") or 0)
+        deducted = round(bottles if raw_after >= 0 else max(bottles + raw_after, 0.0), 2)
+        stock_left = max(round(raw_after, 2), 0.0)
         await db.fluid_templates.update_one({"item_id": fluid["item_id"]}, {"$set": {"stock_bottles": stock_left}})
+        await db.cases.update_one(
+            {"case_id": case_id, "calculations.calc_id": calc["calc_id"]},
+            {"$set": {"calculations.$.mix_deducted": deducted}},
+        )
     return {"entries": entries, "bottles": bottles, "fluid": fluid["name"] if fluid else None, "stock_left": stock_left}
+
+
+@api_router.post("/cases/{case_id}/mix-undo")
+async def undo_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Anula la última mezcla confirmada: devuelve las botellas al inventario y quita sus registros de la Bitácora."""
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    calc = next((x for x in reversed(c.get("calculations") or []) if x.get("mix_confirmed")), None)
+    if not calc:
+        raise HTTPException(status_code=400, detail="No hay una mezcla confirmada para anular")
+    ts = now_iso()
+    confirmed_at = calc.get("mix_confirmed_at")
+    res = await db.cases.update_one(
+        {"case_id": case_id, "calculations": {"$elemMatch": {"calc_id": calc["calc_id"], "mix_confirmed": True}}},
+        {"$set": {"calculations.$.mix_confirmed": False, "updated_at": ts},
+         "$unset": {"calculations.$.mix_confirmed_at": ""}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Esta mezcla ya fue anulada")
+    await db.cases.update_one(
+        {"case_id": case_id},
+        {"$pull": {"logbook": {"source": "mix", "$or": [{"mix_calc_id": calc["calc_id"]},
+                                                        {"mix_calc_id": {"$exists": False}, "created_at": confirmed_at}]}}},
+    )
+    r = calc.get("results") or {}
+    bottles = round(float(calc.get("mix_deducted", r.get("bottles") or 0)), 2)
+    await db.cases.update_one(
+        {"case_id": case_id, "calculations.calc_id": calc["calc_id"]},
+        {"$unset": {"calculations.$.mix_deducted": ""}},
+    )
+    fluid_name = str(r.get("fluid_name") or "").strip()
+    stock = None
+    if fluid_name:
+        f = await db.fluid_templates.find_one_and_update(
+            {"user_id": user["user_id"], "name_key": fluid_name.lower()},
+            {"$inc": {"stock_bottles": bottles}, "$set": {"updated_at": ts}},
+            projection={"_id": 0}, return_document=True,
+        )
+        if f:
+            stock = round(float(f.get("stock_bottles") or 0), 2)
+            await db.fluid_templates.update_one({"item_id": f["item_id"]}, {"$set": {"stock_bottles": stock}})
+    return {"ok": True, "bottles": bottles, "fluid": fluid_name or None, "stock": stock}
+
+
+def _to_unit(qty: float, unit: str, target: str) -> Optional[float]:
+    oz = 29.5735295625
+    if unit == target:
+        return qty
+    if unit == "oz" and target == "ml":
+        return qty * oz
+    if unit == "ml" and target == "oz":
+        return qty / oz
+    return None
+
+
+@api_router.get("/cases/{case_id}/cost")
+async def case_cost(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Costo en fluidos (MXN): arterial de mezclas confirmadas + co-inyectores, cavidades y otros de la Bitácora."""
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    fluids = {f["name_key"]: f for f in await db.fluid_templates.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)}
+    prices = await db.product_prices.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)
+    by_key = {p["name_key"]: p for p in prices}
+    groups: Dict[str, Dict[str, Any]] = {k: {"key": k, "label": "Arterial" if k == "arterial" else PRICE_CATS[k], "total": 0.0, "items": []}
+                                         for k in ["arterial", "coinyector", "cavidad", "otro"]}
+    missing: List[str] = []
+    for calc in c.get("calculations") or []:
+        if not calc.get("mix_confirmed"):
+            continue
+        r = calc.get("results") or {}
+        name = str(r.get("fluid_name") or "").strip()
+        f = fluids.get(name.lower()) if name else None
+        bottles = float(r.get("bottles") or 0)
+        label = f"{name or 'Arterial'} · {bottles:.2f} botellas"
+        if f and f.get("price_per_bottle") is not None:
+            cost = round(bottles * float(f["price_per_bottle"]), 2)
+            groups["arterial"]["items"].append({"label": label, "cost": cost})
+            groups["arterial"]["total"] += cost
+        else:
+            missing.append(name or "Arterial sin nombre")
+    for e in c.get("logbook") or []:
+        if e.get("source") == "mix":
+            continue
+        pname = str(e.get("product") or "").strip()
+        key = pname.lower()
+        p = by_key.get(key) if key else None
+        if not p:
+            missing.append(pname)
+            continue
+        q = _to_unit(float(e.get("quantity") or 0), str(e.get("unit") or ""), p["unit"])
+        if q is None:
+            missing.append(f"{pname} (unidad distinta)")
+            continue
+        cost = round(q / float(p["size"]) * float(p["price"]), 2)
+        g = groups[p.get("category") if p.get("category") in groups else "otro"]
+        g["items"].append({"label": f"{pname} · {e.get('quantity')} {'mL' if e.get('unit') == 'ml' else e.get('unit')}", "cost": cost})
+        g["total"] += cost
+    out = [{**g, "total": round(g["total"], 2)} for g in groups.values() if g["items"]]
+    return {"currency": "MXN", "groups": out, "total": round(sum(g["total"] for g in out), 2),
+            "missing": sorted(set(missing))}
 
 
 # ----------------------------- Case attachments (scanned documents) -----------------------------

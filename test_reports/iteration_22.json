@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 22 tested Deshacer mezcla (mix-undo), the low-stock alert (min_stock), the shopping list over WhatsApp, the price catalog and the per-case cost in MXN. Backend: 9/9 pytest pass, plus an edge-case script. Undo returns the exact bottles: 7.3 stays 7.3 after 4 confirm/undo cycles. It removes only the 2 source='mix' entries and keeps manual ones. A second undo returns 400 and confirming again works. PATCH fluids min_stock/price_per_bottle rounds to 2 decimals and clamps negatives to 0. Invalid values return 400; an unknown id returns 404. Prices CRUD works: validation, case-insensitive upsert by name, and delete followed by a 404 on a second delete. Cost groups are correct: arterial 1.38 bottles x 400 = 552; 300 MXN per 16 oz with 8 oz logged = 150; 200 per 473 mL with 473 mL logged = 200; 100 per 500 g with 250 g logged = 50. An unpriced product and a g-vs-ml mismatch both appear in missing, the second with '(unidad distinta)'. Mix entries are excluded. Frontend at 390x844, all flows pass. The low-stock-banner shows after min_stock is raised to 6 in the UI and tapping it opens /library/inventory. inv-cfg, inv-min, inv-price and inv-cfg-save persist. With an empty shopping list, sending shows an error toast; a filled list opens wa.me with '*Pedido de fluidos*\\n• TEST_UIFluid22 (Index 25%, 473 mL): 3 botellas'. inv-prices opens /library/prices, where adding (cavidad + oz chips), listing and deleting all work. Reporte tab: window.confirm was accepted. Confirming changes the cost from $150 to $771 MXN (arterial $621 at 1.38 x 450) and mix-undo appears. Undo shows the toast '+1.38 botellas, ahora 5', the cost goes back to $150 and mix-confirm reappears. Two minor backend edge-case bugs were found. No deprecated Expo packages were detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/cases/{id}/mix-undo", "issue": "The inventory grows if stock was clamped to 0 at confirm. Reproduced: stock 0.5, confirm 1.38 bottles -> stock 0, undo -> stock 1.38 (it should be 0.5). Undo adds back the full bottles, but confirm only removed 0.5. Fix: store the bottles actually deducted (stock_before - stock_left) on the calc at confirm, and add back that amount on undo. Reference: server.py:2119-2124, 2152-2163"},
+      {"endpoint": "GET /api/cases/{id}/cost", "issue": "Fuzzy price matching uses a substring check: `x['name_key'] in key or key in x['name_key']`. This can price the wrong product. Reproduced: price 'TEST_Sal' was applied to logbook entry 'TEST_Salicilato X'. An empty product name would match every price. Prefer an exact name_key match, or match on word boundaries / the longest match. Reference: server.py:2209"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "library/prices", "issues": ["Saving a price shows no success toast; the list refreshes silently. Deleting a price has no confirmation."]},
+      {"screen": "library/inventory & prices", "issues": ["Toasts cover the screen header/title for several seconds (minor)."]},
+      {"screen": "Casos (low-stock-banner)", "issues": ["The banner text shows 'TEST_UIFluid22 (5)' with no unit; consider '(5 botellas)'."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_undo_prices_cost.py",
+    "/app/backend/tests/edge_iter22_clamp_undo.py",
+    "/app/backend/tests/ui_setup_iter22.py",
+    "/app/test_reports/pytest/iter22.xml"
+  ],
+  "action_items": [
+    "mix-undo: add back only the bottles actually deducted at confirm (store deducted_bottles on the calc), so the inventory does not grow when the stock was clamped to 0.",
+    "cost: replace the substring fallback when matching prices with an exact or safer match, and skip empty product names.",
+    "Optional UX: show a success toast on price save, ask for confirmation before deleting a price, and add 'botellas' to the banner text."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2438 lines; consider splitting the routers (fluids/prices/cost/mix) into modules.",
+    "add_log_entry: `next(iter(LOG_UNITS[form]))` on a set gives a non-deterministic default unit for liquid (oz or ml). Use a list or an explicit default."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (9/9 pytest); 2 minor edge-case bugs", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Created TEST_ fluids, cases and prices. All were deleted by id afterwards; verified that no TEST_ fluids or prices remain.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend env var is EXPO_PUBLIC_BACKEND_URL. Each browser run shows the Welcome carousel: tap the 'Saltar' text. ui_setup_iter22.py creates a fluid (stock 5, price 400), a price TEST_UICoinj22 (300 per 16 oz), and a case with an injection calc plus an 8 oz logbook entry. Clean up with 'cleanup <case_id> <fluid_id> <price_id>'. To show the banner, set min_stock >= stock. Stub window.open to capture wa.me URLs. Accept the window.confirm dialog via page.on('dialog').",
+  "rca_of_issue": "mix-undo inflation: confirm runs $inc -bottles and then clamps to max(0); undo runs $inc +bottles. When the stock was below the bottles needed, the clamped difference is lost, so undo adds more than was removed."
+}

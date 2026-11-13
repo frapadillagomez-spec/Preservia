@@ -15,27 +15,57 @@ export function MixSheet({
   caseId,
   hasMix,
   confirmed,
+  canUndo,
   onConfirmed,
 }: {
   caseId: string;
   hasMix: boolean;
   confirmed: boolean;
+  canUndo: boolean;
   onConfirmed: () => void;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<"pdf" | "text" | "confirm" | null>(null);
+  const [busy, setBusy] = useState<"pdf" | "text" | "confirm" | "undo" | null>(null);
 
-  const confirm = () => {
-    const msg = "Se registrarán el arterial y el agua en la Bitácora y se descontarán las botellas del inventario. No se puede deshacer.";
+  const ask = (title: string, msg: string, ok: string, fn: () => void) => {
     if (Platform.OS === "web") {
-      if (window.confirm(msg)) doConfirm();
+      if (window.confirm(msg)) fn();
       return;
     }
-    Alert.alert("Confirmar mezcla", msg, [
+    Alert.alert(title, msg, [
       { text: "Cancelar", style: "cancel" },
-      { text: "Confirmar", onPress: doConfirm },
+      { text: ok, style: "destructive", onPress: fn },
     ]);
   };
+
+  const undo = () =>
+    ask(
+      "Anular mezcla",
+      "Se devolverán las botellas al inventario y se quitarán de la Bitácora el arterial y el agua de esta mezcla.",
+      "Anular",
+      doUndo,
+    );
+
+  const doUndo = async () => {
+    setBusy("undo");
+    try {
+      const r = await api.post<{ bottles: number; stock: number | null }>(`/cases/${caseId}/mix-undo`, {});
+      toast.show(r.stock !== null ? `Mezcla anulada: +${r.bottles} botellas, ahora ${r.stock}` : "Mezcla anulada", "success");
+      onConfirmed();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirm = () =>
+    ask(
+      "Confirmar mezcla",
+      "Se registrarán el arterial y el agua en la Bitácora y se descontarán las botellas del inventario. Podrás anularla después.",
+      "Confirmar",
+      doConfirm,
+    );
 
   const doConfirm = async () => {
     setBusy("confirm");
@@ -106,6 +136,18 @@ export function MixSheet({
             <Text testID="mix-confirmed" style={styles.done}>✓ Mezcla confirmada: registrada en la Bitácora y descontada del inventario</Text>
           ) : (
             <Button testID="mix-confirm" label="Confirmar mezcla" icon="checkmark-done-outline" onPress={confirm} loading={busy === "confirm"} disabled={!!busy} />
+          )}
+          {canUndo && (
+            <Button
+              testID="mix-undo"
+              label="Anular última mezcla confirmada"
+              icon="arrow-undo-outline"
+              variant="ghost"
+              onPress={undo}
+              loading={busy === "undo"}
+              disabled={!!busy}
+              style={{ marginTop: spacing.xs }}
+            />
           )}
         </View>
       )}

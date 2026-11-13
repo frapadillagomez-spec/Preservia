@@ -23,6 +23,7 @@ import { useToast } from "@/src/components/Toast";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateMx } from "@/src/utils/mxtime";
 import { BrandBar } from "@/src/components/BrandLogo";
+import { LowStockBanner } from "@/src/components/LowStockBanner";
 import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 const EMPTY_IMG =
@@ -158,6 +159,7 @@ export default function CasesList() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <BrandBar />
+      <LowStockBanner />
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>Casos</Text>
