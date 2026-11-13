@@ -15,11 +15,12 @@ export const toL = (ml: number) => `${(ml / 1000).toFixed(3)} L`;
 
 /** Co-inyectores tomados de la bitácora: líquidos (mL u oz), excepto DermaFix, BioFix, OncoShield y LeakFix. */
 export function coinjectorsFromLogbook(
-  logbook: { product: string; form: string; quantity: number; unit: string; source?: string }[],
+  logbook: { product: string; form: string; quantity: number; unit: string; source?: string; category?: string }[],
 ): CoInjector[] {
   return logbook
     .filter((e) => {
       if (e.source === "mix") return false; // arterial y agua registrados por "Confirmar mezcla"
+      if (e.category && e.category !== "bitacora") return false; // cavidad, tópico y putrefacto no son co-inyectores
       const key = String(e.product || "").toLowerCase().replace(/[\s\-_]/g, "");
       return (e.unit === "ml" || e.unit === "oz") && e.quantity > 0 && !EXCLUDED.some((x) => key.includes(x));
     })

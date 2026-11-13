@@ -109,9 +109,13 @@ class AttachmentInput(BaseModel):
 
 class LogEntryInput(BaseModel):
     product: str
-    form: str  # liquid | powder
+    form: str  # liquid | powder | gel | cream
     quantity: float
     unit: str  # oz | ml | g
+    category: Optional[str] = "bitacora"  # bitacora | cavidad | topico | putrefacto
+    lot: Optional[str] = ""
+    fluid_id: Optional[str] = None
+    lot_id: Optional[str] = None
 
 
 class CatalogInput(BaseModel):
@@ -961,7 +965,8 @@ async def delete_calculation(case_id: str, calc_id: str, user: Dict[str, Any] = 
 
 
 # ----------------------------- Logbook (bitácora de productos) -----------------------------
-LOG_UNITS = {"liquid": {"oz", "ml"}, "powder": {"g"}}
+LOG_UNITS = {"liquid": {"oz", "ml"}, "powder": {"g"}, "gel": {"g"}, "cream": {"g"}}
+LOG_CATEGORIES = {"bitacora", "cavidad", "topico", "putrefacto"}
 
 
 @api_router.post("/cases/{case_id}/logbook")
@@ -969,20 +974,41 @@ async def add_log_entry(case_id: str, data: LogEntryInput, user: Dict[str, Any] 
     c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
-    form = data.form if data.form in ("liquid", "powder") else "liquid"
+    category = data.category if data.category in LOG_CATEGORIES else "bitacora"
+    form = data.form if data.form in LOG_UNITS else "liquid"
+    if category in ("cavidad", "putrefacto"):
+        form = "liquid"
     unit = data.unit if data.unit in LOG_UNITS[form] else next(iter(LOG_UNITS[form]))
     if not data.product.strip():
         raise HTTPException(status_code=400, detail="Producto requerido")
     if data.quantity <= 0:
         raise HTTPException(status_code=400, detail="La cantidad debe ser mayor que 0")
+    if not (data.lot or "").strip() and not data.lot_id:
+        raise HTTPException(status_code=400, detail="Ingresa el número de lote")
     entry = {
         "log_id": f"log_{uuid.uuid4().hex[:10]}",
         "product": data.product.strip(),
         "form": form,
         "quantity": round(data.quantity, 2),
         "unit": unit,
+        "category": category,
+        "lot": (data.lot or "").strip()[:40],
         "created_at": now_iso(),
     }
+    # Descuenta del lote elegido del inventario: cantidad / tamaño del envase.
+    if data.fluid_id:
+        f = await db.fluid_templates.find_one({"item_id": data.fluid_id, "user_id": user["user_id"]}, {"_id": 0})
+        if f:
+            size = float(f.get("bottle_ml") or 473.0)
+            q = _to_unit(entry["quantity"], unit, f.get("unit") or "ml")
+            if q is not None and size > 0:
+                if not data.lot_id and entry["lot"] and not any(
+                        x["lot"].strip().lower() == entry["lot"].lower() for x in _lots_of(f)):
+                    raise HTTPException(status_code=400, detail=f"El lote {entry['lot']} no existe en el inventario de {f['name']}")
+                adj = await _adjust_lot(user["user_id"], f["item_id"], -round(q / size, 4), lot_id=data.lot_id,
+                                        lot_name=None if data.lot_id else (entry["lot"] or None))
+                entry.update({"fluid_id": f["item_id"], "lot_id": adj["lot_id"], "lot": adj["lot"],
+                              "deducted": round(-adj["applied"], 2)})
     await db.cases.update_one(
         {"case_id": case_id},
         {"$push": {"logbook": entry}, "$set": {"updated_at": now_iso()}},
@@ -995,11 +1021,38 @@ async def delete_log_entry(case_id: str, log_id: str, user: Dict[str, Any] = Dep
     c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]})
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
+    e = next((x for x in c.get("logbook") or [] if x.get("log_id") == log_id), None)
     await db.cases.update_one(
         {"case_id": case_id},
         {"$pull": {"logbook": {"log_id": log_id}}, "$set": {"updated_at": now_iso()}},
     )
+    if e and e.get("fluid_id") and float(e.get("deducted") or 0) > 0:
+        await _adjust_lot(user["user_id"], e["fluid_id"], float(e["deducted"]), lot_id=e.get("lot_id"))
     return {"ok": True}
+
+
+@api_router.post("/cases/{case_id}/embalming")
+async def embalming_timer(case_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    """Iniciar / Terminar el embalsamamiento: guarda la hora actual y la duración."""
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    action = payload.get("action")
+    ts = now_iso()
+    hhmm = datetime.now(timezone.utc).astimezone(MX_TZ).strftime("%H:%M")
+    if action == "start":
+        upd = {"embalming_start": ts, "embalming_end": None, "case_sheet.inicio_emb": hhmm, "case_sheet.termino_emb": ""}
+    elif action == "stop":
+        if not c.get("embalming_start"):
+            raise HTTPException(status_code=400, detail="Primero toca Iniciar")
+        upd = {"embalming_end": ts, "case_sheet.termino_emb": hhmm}
+    else:
+        raise HTTPException(status_code=400, detail="Acción no válida")
+    if not isinstance(c.get("case_sheet"), dict):
+        await db.cases.update_one({"case_id": case_id}, {"$set": {"case_sheet": {}}})
+    await db.cases.update_one({"case_id": case_id}, {"$set": {**upd, "updated_at": ts}})
+    updated = await db.cases.find_one({"case_id": case_id}, {"_id": 0})
+    return {"case": updated}
 
 
 # ----------------------------- Notes -----------------------------
@@ -1298,19 +1351,138 @@ async def delete_coinjector(item_id: str, user: Dict[str, Any] = Depends(get_cur
 # ---------- Plantillas de fluidos arteriales ----------
 @api_router.get("/fluids")
 async def list_fluids(user: Dict[str, Any] = Depends(get_current_user)):
-    items = await db.fluid_templates.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0, "name_key": 0}).sort("name", 1).to_list(200)
+    items = await db.fluid_templates.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0, "name_key": 0}).sort("name", 1).to_list(500)
+    for f in items:
+        f["lots"] = _lots_of(f)
+        f.setdefault("kind", "arterial")
     return {"items": items}
+
+
+# ---------- Lotes por producto (existencia separada por lote) ----------
+PRODUCT_KINDS = {"arterial", "coinyector", "cavidad", "topico", "putrefacto", "otro"}
+
+
+def _lots_of(f: Dict[str, Any]) -> List[Dict[str, Any]]:
+    lots = f.get("lots")
+    if isinstance(lots, list):
+        return lots
+    if f.get("stock_bottles") is not None:  # inventario anterior a los lotes
+        return [{"lot_id": "lot_legacy", "lot": "Sin lote", "stock": round(float(f.get("stock_bottles") or 0), 2)}]
+    return []
+
+
+async def _adjust_lot(user_id: str, item_id: str, delta: float, lot_id: Optional[str] = None,
+                      lot_name: Optional[str] = None, set_to: Optional[float] = None) -> Dict[str, Any]:
+    """Suma/resta (o fija) envases en un lote; crea el lote si se da un número nuevo. Nunca baja de 0.
+    Devuelve {lot_id, lot, applied, stock_lot, stock_total} o {} si el producto no existe."""
+    f = await db.fluid_templates.find_one({"item_id": item_id, "user_id": user_id}, {"_id": 0})
+    if not f:
+        return {}
+    lots = [dict(x) for x in _lots_of(f)]
+    lot = None
+    if lot_id:
+        lot = next((x for x in lots if x["lot_id"] == lot_id), None)
+    if lot is None and lot_name:
+        lot = next((x for x in lots if x["lot"].strip().lower() == lot_name.strip().lower()), None)
+        if lot is None:
+            lot = {"lot_id": f"lot_{uuid.uuid4().hex[:10]}", "lot": lot_name.strip()[:40], "stock": 0.0}
+            lots.append(lot)
+    if lot is None:
+        lot = next((x for x in lots if float(x.get("stock") or 0) > 0), None) or (lots[0] if lots else None)
+    if lot is None:
+        lot = {"lot_id": f"lot_{uuid.uuid4().hex[:10]}", "lot": "Sin lote", "stock": 0.0}
+        lots.append(lot)
+    before = float(lot.get("stock") or 0)
+    after = set_to if set_to is not None else before + delta
+    after = round(min(max(after, 0.0), 100000.0), 2)
+    lot["stock"] = after
+    total = round(sum(float(x.get("stock") or 0) for x in lots), 2)
+    await db.fluid_templates.update_one({"item_id": item_id}, {"$set": {"lots": lots, "stock_bottles": total, "updated_at": now_iso()}})
+    return {"lot_id": lot["lot_id"], "lot": lot["lot"], "applied": round(after - before, 2), "stock_lot": after,
+            "stock_total": total, "name": f["name"]}
+
+
+@api_router.post("/fluids/{item_id}/lots")
+async def add_lot(item_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    name = str(payload.get("lot") or "").strip()
+    try:
+        stock = float(payload.get("stock") or 0)
+    except (TypeError, ValueError):
+        stock = -1
+    if not name or stock < 0:
+        raise HTTPException(status_code=400, detail="Escribe el número de lote y su existencia")
+    r = await _adjust_lot(user["user_id"], item_id, stock, lot_name=name)
+    if not r:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    return r
+
+
+@api_router.patch("/fluids/{item_id}/lots/{lot_id}")
+async def update_lot(item_id: str, lot_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    try:
+        set_to = float(payload["set"]) if payload.get("set") is not None else None
+        delta = float(payload.get("delta") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Cantidad no válida")
+    f = await db.fluid_templates.find_one({"item_id": item_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not f or not any(x["lot_id"] == lot_id for x in _lots_of(f)):
+        raise HTTPException(status_code=404, detail="Lote no encontrado")
+    return await _adjust_lot(user["user_id"], item_id, delta, lot_id=lot_id, set_to=set_to)
+
+
+@api_router.delete("/fluids/{item_id}/lots/{lot_id}")
+async def delete_lot(item_id: str, lot_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    f = await db.fluid_templates.find_one({"item_id": item_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not f:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    lots = [x for x in _lots_of(f) if x["lot_id"] != lot_id]
+    if len(lots) == len(_lots_of(f)):
+        raise HTTPException(status_code=404, detail="Lote no encontrado")
+    total = round(sum(float(x.get("stock") or 0) for x in lots), 2)
+    await db.fluid_templates.update_one({"item_id": item_id}, {"$set": {"lots": lots, "stock_bottles": total, "updated_at": now_iso()}})
+    return {"ok": True, "stock_total": total}
+
+
+# ---------- Proveedores ----------
+@api_router.get("/suppliers")
+async def list_suppliers(user: Dict[str, Any] = Depends(get_current_user)):
+    return {"items": await db.suppliers.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0}).sort("name", 1).to_list(200)}
+
+
+@api_router.post("/suppliers")
+async def add_supplier(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    name = str(payload.get("name") or "").strip()[:80]
+    phone = "".join(ch for ch in str(payload.get("phone") or "") if ch.isdigit())[:15]
+    if not name or len(phone) < 10:
+        raise HTTPException(status_code=400, detail="Escribe el nombre y un teléfono de al menos 10 dígitos (con lada del país, ej. 52…)")
+    doc = {"supplier_id": f"sup_{uuid.uuid4().hex[:10]}", "user_id": user["user_id"], "name": name, "phone": phone,
+           "notes": str(payload.get("notes") or "").strip()[:200], "created_at": now_iso()}
+    await db.suppliers.insert_one(dict(doc))
+    doc.pop("user_id", None)
+    return {"item": doc}
+
+
+@api_router.delete("/suppliers/{supplier_id}")
+async def delete_supplier(supplier_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    res = await db.suppliers.delete_one({"supplier_id": supplier_id, "user_id": user["user_id"]})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    return {"ok": True}
 
 
 @api_router.post("/fluids")
 async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
     name = str(payload.get("name") or "").strip()[:80]
+    kind = str(payload.get("kind") or "arterial").lower()
+    if kind not in PRODUCT_KINDS:
+        kind = "arterial"
+    unit = "g" if str(payload.get("unit") or "ml").lower() == "g" else "ml"
     try:
         idx = float(payload.get("index_pct") or 0)
     except (TypeError, ValueError):
         idx = 0
-    if not name or not (0 < idx <= 100):
-        raise HTTPException(status_code=400, detail="El fluido necesita nombre y un índice entre 0 y 100 %")
+    if not name or (kind == "arterial" and not (0 < idx <= 100)) or not (0 <= idx <= 100):
+        raise HTTPException(status_code=400, detail="El producto necesita nombre (y, si es arterial, un índice entre 0 y 100 %)")
     try:
         bottle_ml = float(payload.get("bottle_ml") or 473.0)
     except (TypeError, ValueError):
@@ -1318,10 +1490,12 @@ async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_
     if not (0 < bottle_ml <= 20000):
         raise HTTPException(status_code=400, detail="El tamaño de botella debe estar entre 1 y 20000 mL")
     doc = {"name": name, "name_key": name.lower(), "index_pct": round(idx, 2), "bottle_ml": round(bottle_ml, 1),
+           "kind": kind, "unit": unit,
            "brand": str(payload.get("brand") or "").strip()[:80], "updated_at": now_iso()}
+    init_stock = None
     if payload.get("stock_bottles") not in (None, ""):
         try:
-            doc["stock_bottles"] = round(max(float(payload["stock_bottles"]), 0.0), 2)
+            init_stock = round(max(float(payload["stock_bottles"]), 0.0), 2)
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="Existencia de botellas no válida")
     existing = await db.fluid_templates.find_one({"user_id": user["user_id"], "name_key": doc["name_key"]}, {"_id": 0})
@@ -1331,7 +1505,11 @@ async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_
     else:
         item = {"item_id": f"flu_{uuid.uuid4().hex[:12]}", "user_id": user["user_id"], **doc}
         await db.fluid_templates.insert_one(dict(item))
+    if init_stock is not None:
+        r = await _adjust_lot(user["user_id"], item["item_id"], 0, lot_name=str(payload.get("lot") or "Sin lote"), set_to=init_stock)
+        item["stock_bottles"] = r["stock_total"]
     item.pop("_id", None)
+    item["lots"] = _lots_of((await db.fluid_templates.find_one({"item_id": item["item_id"]}, {"_id": 0})) or {})
     return {"item": item}
 
 
@@ -1357,7 +1535,7 @@ async def update_fluid_settings(item_id: str, payload: Dict[str, Any], user: Dic
 
 # ---------- Precios de productos (co-inyectores, cavidades, otros) ----------
 PRICE_UNITS = {"ml", "oz", "g"}
-PRICE_CATS = {"coinyector": "Co-inyectores", "cavidad": "Cavidades", "otro": "Otros"}
+PRICE_CATS = {"coinyector": "Co-inyectores", "cavidad": "Cavidades", "topico": "Tópicos", "putrefacto": "Putrefacto / gas", "otro": "Otros"}
 
 
 @api_router.get("/prices")
@@ -1403,29 +1581,18 @@ async def delete_price(item_id: str, user: Dict[str, Any] = Depends(get_current_
 
 @api_router.patch("/fluids/{item_id}/stock")
 async def update_fluid_stock(item_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
-    """Inventario: suma/resta botellas (delta) o fija la existencia (set)."""
+    """Inventario (compatibilidad): suma/resta (delta) o fija (set) en el primer lote con existencia."""
     f = await db.fluid_templates.find_one({"item_id": item_id, "user_id": user["user_id"]}, {"_id": 0})
     if not f:
         raise HTTPException(status_code=404, detail="Fluido no encontrado")
     try:
-        if payload.get("set") is not None:
-            stock = float(payload["set"])
-        else:
-            stock = float(f.get("stock_bottles") or 0) + float(payload.get("delta") or 0)
+        set_to = float(payload["set"]) if payload.get("set") is not None else None
+        delta = float(payload.get("delta") or 0)
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Cantidad de botellas no válida")
-    stock = round(min(max(stock, 0.0), 100000.0), 2)
-    if payload.get("set") is None:
-        # incremento atómico para no perder toques rápidos
-        upd = await db.fluid_templates.find_one_and_update(
-            {"item_id": item_id}, {"$inc": {"stock_bottles": float(payload.get("delta") or 0)}, "$set": {"updated_at": now_iso()}},
-            projection={"_id": 0}, return_document=True,
-        )
-        stock = max(round(float(upd.get("stock_bottles") or 0), 2), 0.0)
-        await db.fluid_templates.update_one({"item_id": item_id}, {"$set": {"stock_bottles": stock}})
-        return {"item": {**upd, "stock_bottles": stock}}
-    await db.fluid_templates.update_one({"item_id": item_id}, {"$set": {"stock_bottles": stock, "updated_at": now_iso()}})
-    return {"item": {**f, "stock_bottles": stock}}
+    r = await _adjust_lot(user["user_id"], item_id, delta, set_to=set_to)
+    f = await db.fluid_templates.find_one({"item_id": item_id}, {"_id": 0, "user_id": 0})
+    return {"item": {**f, "lots": _lots_of(f), "stock_bottles": r["stock_total"]}}
 
 
 @api_router.delete("/fluids/{item_id}")
@@ -1904,19 +2071,21 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
     elems.append(Paragraph("Bitacora de productos", h2))
     if logbook:
         unit_lbl = {"oz": "oz", "ml": "mL", "g": "g"}
-        form_lbl = {"liquid": "Liquido", "powder": "Polvo"}
+        form_lbl = {"liquid": "Liquido", "powder": "Polvo", "gel": "Gel", "cream": "Crema"}
+        cat_lbl = {"bitacora": "Arterial / co-iny.", "cavidad": "Cavidad", "topico": "Topico", "putrefacto": "Putrefacto / gas"}
         rows = [[Paragraph("<b>Producto</b>", cell), Paragraph("<b>Tipo</b>", cell),
-                 Paragraph("<b>Cantidad</b>", cell), Paragraph("<b>Unidad</b>", cell)]]
-        for e in logbook:
+                 Paragraph("<b>Cantidad</b>", cell), Paragraph("<b>Lote</b>", cell)]]
+        order = {"bitacora": 0, "cavidad": 1, "topico": 2, "putrefacto": 3}
+        for e in sorted(logbook, key=lambda x: order.get(x.get("category") or "bitacora", 0)):
             q = e.get("quantity")
             q = int(q) if isinstance(q, (int, float)) and float(q).is_integer() else q
             rows.append([
                 Paragraph(esc(e.get("product", "")), cell),
-                Paragraph(esc(form_lbl.get(e.get("form"), e.get("form", ""))), cell),
-                Paragraph(esc(q), cell),
-                Paragraph(esc(unit_lbl.get(e.get("unit"), e.get("unit", ""))), cell),
+                Paragraph(esc(f"{cat_lbl.get(e.get('category') or 'bitacora', '')} · {form_lbl.get(e.get('form'), e.get('form', ''))}"), cell),
+                Paragraph(esc(f"{q} {unit_lbl.get(e.get('unit'), e.get('unit', ''))}"), cell),
+                Paragraph(esc(e.get("lot") or "-"), cell),
             ])
-        lt = Table(rows, colWidths=[75 * mm, 32 * mm, 30 * mm, 28 * mm])
+        lt = Table(rows, colWidths=[62 * mm, 45 * mm, 28 * mm, 30 * mm])
         lt.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), slate),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -2132,7 +2301,7 @@ async def mix_sheet(case_id: str, user: Dict[str, Any] = Depends(get_current_use
 
 
 @api_router.post("/cases/{case_id}/mix-confirm")
-async def confirm_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+async def confirm_mix(case_id: str, payload: Optional[Dict[str, Any]] = None, user: Dict[str, Any] = Depends(get_current_user)):
     """Confirma la mezcla del último Cálculo de inyección: registra arterial y agua en la Bitácora
     y descuenta del inventario la fracción exacta de botellas usadas."""
     c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
@@ -2162,22 +2331,25 @@ async def confirm_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_u
         raise HTTPException(status_code=400, detail="Esta mezcla ya fue confirmada")
     stock_left = None
     fluid = None
+    lot_txt = ""
     if fluid_name:
-        fluid = await db.fluid_templates.find_one_and_update(
-            {"user_id": user["user_id"], "name_key": fluid_name.lower()},
-            {"$inc": {"stock_bottles": -bottles}, "$set": {"updated_at": ts}},
-            projection={"_id": 0}, return_document=True,
-        )
+        fluid = await db.fluid_templates.find_one({"user_id": user["user_id"], "name_key": fluid_name.lower()}, {"_id": 0})
     if fluid:
-        raw_after = float(fluid.get("stock_bottles") or 0)
-        deducted = round(bottles if raw_after >= 0 else max(bottles + raw_after, 0.0), 2)
-        stock_left = max(round(raw_after, 2), 0.0)
-        await db.fluid_templates.update_one({"item_id": fluid["item_id"]}, {"$set": {"stock_bottles": stock_left}})
+        adj = await _adjust_lot(user["user_id"], fluid["item_id"], -bottles, lot_id=(payload or {}).get("lot_id"))
+        deducted = round(-adj["applied"], 2)
+        stock_left = adj["stock_total"]
+        lot_txt = adj["lot"]
         await db.cases.update_one(
             {"case_id": case_id, "calculations.calc_id": calc["calc_id"]},
-            {"$set": {"calculations.$.mix_deducted": deducted}},
+            {"$set": {"calculations.$.mix_deducted": deducted, "calculations.$.mix_lot_id": adj["lot_id"],
+                      "calculations.$.mix_lot": lot_txt, "calculations.$.mix_fluid_id": fluid["item_id"]}},
         )
-    return {"entries": entries, "bottles": bottles, "fluid": fluid["name"] if fluid else None, "stock_left": stock_left}
+        await db.cases.update_one(
+            {"case_id": case_id},
+            {"$set": {"logbook.$[e].lot": lot_txt}},
+            array_filters=[{"e.mix_calc_id": calc["calc_id"], "e.product": art_label}],
+        )
+    return {"entries": entries, "bottles": bottles, "fluid": fluid["name"] if fluid else None, "stock_left": stock_left, "lot": lot_txt}
 
 
 @api_router.post("/cases/{case_id}/mix-undo")
@@ -2207,19 +2379,18 @@ async def undo_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_user
     bottles = round(float(calc.get("mix_deducted", r.get("bottles") or 0)), 2)
     await db.cases.update_one(
         {"case_id": case_id, "calculations.calc_id": calc["calc_id"]},
-        {"$unset": {"calculations.$.mix_deducted": ""}},
+        {"$unset": {"calculations.$.mix_deducted": "", "calculations.$.mix_lot_id": "", "calculations.$.mix_lot": ""}},
     )
     fluid_name = str(r.get("fluid_name") or "").strip()
     stock = None
-    if fluid_name:
-        f = await db.fluid_templates.find_one_and_update(
-            {"user_id": user["user_id"], "name_key": fluid_name.lower()},
-            {"$inc": {"stock_bottles": bottles}, "$set": {"updated_at": ts}},
-            projection={"_id": 0}, return_document=True,
-        )
-        if f:
-            stock = round(float(f.get("stock_bottles") or 0), 2)
-            await db.fluid_templates.update_one({"item_id": f["item_id"]}, {"$set": {"stock_bottles": stock}})
+    f = None
+    if calc.get("mix_fluid_id"):
+        f = await db.fluid_templates.find_one({"item_id": calc["mix_fluid_id"], "user_id": user["user_id"]}, {"_id": 0})
+    if not f and fluid_name:
+        f = await db.fluid_templates.find_one({"user_id": user["user_id"], "name_key": fluid_name.lower()}, {"_id": 0})
+    if f:
+        adj = await _adjust_lot(user["user_id"], f["item_id"], bottles, lot_id=calc.get("mix_lot_id"))
+        stock = adj["stock_total"]
     return {"ok": True, "bottles": bottles, "fluid": fluid_name or None, "stock": stock}
 
 
@@ -2297,17 +2468,15 @@ async def add_purchase(payload: Dict[str, Any], user: Dict[str, Any] = Depends(g
     if not _parse_dt(date):
         raise HTTPException(status_code=400, detail="Fecha no válida")
     unit_price = round(total / bottles, 2)
+    lot_name = str(payload.get("lot") or "").strip()[:40] or "Sin lote"
     doc = {"purchase_id": f"pur_{uuid.uuid4().hex[:12]}", "user_id": user["user_id"], "fluid_id": f["item_id"],
            "fluid_name": f["name"], "bottles": round(bottles, 2), "total": round(total, 2), "unit_price": unit_price,
-           "supplier": str(payload.get("supplier") or "").strip()[:80], "date": date, "created_at": now_iso()}
+           "supplier": str(payload.get("supplier") or "").strip()[:80], "lot": lot_name, "date": date, "created_at": now_iso()}
+    adj = await _adjust_lot(user["user_id"], f["item_id"], round(bottles, 2), lot_name=lot_name)
+    doc["lot_id"] = adj["lot_id"]
     await db.fluid_purchases.insert_one(dict(doc))
-    upd = await db.fluid_templates.find_one_and_update(
-        {"item_id": f["item_id"]},
-        {"$inc": {"stock_bottles": round(bottles, 2)}, "$set": {"price_per_bottle": unit_price, "updated_at": now_iso()}},
-        projection={"_id": 0}, return_document=True,
-    )
-    stock = round(float(upd.get("stock_bottles") or 0), 2)
-    await db.fluid_templates.update_one({"item_id": f["item_id"]}, {"$set": {"stock_bottles": stock}})
+    await db.fluid_templates.update_one({"item_id": f["item_id"]}, {"$set": {"price_per_bottle": unit_price}})
+    stock = adj["stock_total"]
     doc.pop("_id", None)
     doc.pop("user_id", None)
     return {"purchase": doc, "stock": stock, "price_per_bottle": unit_price}
@@ -2319,22 +2488,17 @@ async def delete_purchase(purchase_id: str, user: Dict[str, Any] = Depends(get_c
     p = await db.fluid_purchases.find_one_and_delete({"purchase_id": purchase_id, "user_id": user["user_id"]})
     if not p:
         raise HTTPException(status_code=404, detail="Compra no encontrada")
-    upd = await db.fluid_templates.find_one_and_update(
-        {"item_id": p["fluid_id"], "user_id": user["user_id"]},
-        {"$inc": {"stock_bottles": -float(p.get("bottles") or 0)}}, projection={"_id": 0}, return_document=True,
-    )
-    stock = None
-    if upd:
-        stock = max(round(float(upd.get("stock_bottles") or 0), 2), 0.0)
-        await db.fluid_templates.update_one({"item_id": p["fluid_id"]}, {"$set": {"stock_bottles": stock}})
+    adj = await _adjust_lot(user["user_id"], p["fluid_id"], -float(p.get("bottles") or 0), lot_id=p.get("lot_id"))
+    stock = adj.get("stock_total") if adj else None
     return {"ok": True, "stock": stock}
 
 
 def _case_cost(c: Dict[str, Any], fluids: Dict[str, Any], prices: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Costo en fluidos (MXN): arterial de mezclas confirmadas + co-inyectores, cavidades y otros de la Bitácora."""
     by_key = {p["name_key"]: p for p in prices}
+    fluids_by_key = fluids
     groups: Dict[str, Dict[str, Any]] = {k: {"key": k, "label": "Arterial" if k == "arterial" else PRICE_CATS[k], "total": 0.0, "items": []}
-                                         for k in ["arterial", "coinyector", "cavidad", "otro"]}
+                                         for k in ["arterial", "coinyector", "cavidad", "topico", "putrefacto", "otro"]}
     missing: List[str] = []
     for calc in c.get("calculations") or []:
         if not calc.get("mix_confirmed"):
@@ -2356,6 +2520,12 @@ def _case_cost(c: Dict[str, Any], fluids: Dict[str, Any], prices: List[Dict[str,
         pname = str(e.get("product") or "").strip()
         key = pname.lower()
         p = by_key.get(key) if key else None
+        if not p and key in fluids_by_key and fluids_by_key[key].get("price_per_bottle") is not None:
+            fx = fluids_by_key[key]
+            p = {"price": fx["price_per_bottle"], "size": fx.get("bottle_ml") or 473.0, "unit": fx.get("unit") or "ml",
+                 "category": fx.get("kind") if fx.get("kind") in PRICE_CATS else "otro"}
+        if p and e.get("category") in ("cavidad", "topico", "putrefacto"):
+            p = {**p, "category": e["category"]}
         if not p:
             missing.append(pname)
             continue

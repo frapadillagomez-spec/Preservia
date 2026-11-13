@@ -28,7 +28,7 @@ export function FluidTemplates({
     api
       .get<{ items: Fluid[] }>("/fluids")
       .then((r) => {
-        setItems(r.items || []);
+        setItems((r.items || []).filter((f: any) => !f.kind || f.kind === "arterial"));
         if (!r.items?.length) setManage(false);
       })
       .catch(() => {});

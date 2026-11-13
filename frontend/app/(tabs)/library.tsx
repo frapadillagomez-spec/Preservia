@@ -259,6 +259,22 @@ export default function Library() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
           </Pressable>
+          <Pressable
+            testID="ref-suppliers"
+            style={({ pressed }) => [styles.refCard, pressed && { opacity: 0.85 }]}
+            onPress={() => router.push("/library/suppliers")}
+          >
+            <View style={styles.refIcon}>
+              <Ionicons name="call-outline" size={22} color={colors.onSurface} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.refTitle}>Proveedores</Text>
+              <Text style={styles.refSummary} numberOfLines={2}>
+                Teléfonos para pedir fluidos por WhatsApp con un toque.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceTertiary} />
+          </Pressable>
           {REFERENCE.map((a) => (
             <Pressable
               key={a.id}

@@ -16,8 +16,9 @@ import { api } from "@/src/api";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
-import { mxToISO, nowMxParts, splitMx } from "@/src/utils/mxtime";
+import { mxToISO, nowMxParts, splitMx, durationText } from "@/src/utils/mxtime";
 import { CaseSheetForm, EMPTY_SHEET, Sheet } from "@/src/components/CaseSheetForm";
+import { PickerField } from "@/src/components/PickerField";
 
 
 export default function NewCase() {
@@ -178,14 +179,7 @@ export default function NewCase() {
             ))}
           </View>
 
-          <Field
-            testID="case-dod-input"
-            label="Fecha de fallecimiento (AAAA-MM-DD)"
-            icon="calendar-outline"
-            value={dod}
-            onChangeText={setDod}
-            placeholder="2026-06-01"
-          />
+          <PickerField mode="date" testID="case-dod-input" label="Fecha de fallecimiento" value={dod} onChange={setDod} />
 
           <View style={styles.sectionRow}>
             <Text style={styles.label}>Inicio de embalsamamiento</Text>
@@ -196,10 +190,10 @@ export default function NewCase() {
           </View>
           <View style={styles.dtRow}>
             <View style={styles.dtCol}>
-              <Field testID="start-date" label="Fecha (AAAA-MM-DD)" value={startDate} onChangeText={setStartDate} placeholder="2026-06-01" />
+              <PickerField mode="date" testID="start-date" value={startDate} onChange={setStartDate} />
             </View>
             <View style={styles.dtColSm}>
-              <Field testID="start-time" label="Hora (HH:MM)" value={startTime} onChangeText={setStartTime} placeholder="09:00" />
+              <PickerField mode="time" testID="start-time" value={startTime} onChange={setStartTime} />
             </View>
           </View>
 
@@ -212,12 +206,15 @@ export default function NewCase() {
           </View>
           <View style={styles.dtRow}>
             <View style={styles.dtCol}>
-              <Field testID="end-date" label="Fecha (AAAA-MM-DD)" value={endDate} onChangeText={setEndDate} placeholder="2026-06-01" />
+              <PickerField mode="date" testID="end-date" value={endDate} onChange={setEndDate} />
             </View>
             <View style={styles.dtColSm}>
-              <Field testID="end-time" label="Hora (HH:MM)" value={endTime} onChangeText={setEndTime} placeholder="11:30" />
+              <PickerField mode="time" testID="end-time" value={endTime} onChange={setEndTime} />
             </View>
           </View>
+          {!!durationText(startDate, startTime, endDate, endTime) && (
+            <Text testID="case-duration" style={styles.hint}>Tiempo de embalsamamiento: {durationText(startDate, startTime, endDate, endTime)}</Text>
+          )}
 
           <View style={styles.sheetHeader}>
             <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />

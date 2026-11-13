@@ -4,6 +4,7 @@ import Ionicons from "@react-native-vector-icons/ionicons";
 import { Signature, SignatureModal, SignaturePreview } from "@/src/components/SignaturePad";
 
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { PickerField } from "@/src/components/PickerField";
 import { BODY_CONDITIONS, computeFactorF, GENERAL_CONDITIONS } from "@/src/data/factorF";
 
 type Opt = { key: string; label: string };
@@ -125,7 +126,7 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
     <>
       <SectionLabel text="Ingreso" />
       {!compact && (
-        <TextField label="Fecha de ingreso (AAAA-MM-DD)" testID="s-fecha_ingreso" value={sheet.fecha_ingreso} onChangeText={(v) => set("fecha_ingreso", v)} placeholder="2026-06-01" />
+        <PickerField mode="date" label="Fecha de ingreso" testID="s-fecha_ingreso" value={sheet.fecha_ingreso} onChange={(v) => set("fecha_ingreso", v)} />
       )}
       <TextField label="No. de servicio" testID="s-no_servicio" value={sheet.no_servicio} onChangeText={(v) => set("no_servicio", v)} placeholder="Ej. 1024" />
       {!compact && (
@@ -136,11 +137,11 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
 
       <SectionLabel text="Horarios" />
       <View style={styles.row3}>
-        <SmallField label="Ingreso a sala" testID="s-ingreso_sala" value={sheet.ingreso_sala} onChangeText={(v) => set("ingreso_sala", v)} placeholder="HH:MM" />
+        <PickerField mode="time" label="Ingreso a sala" testID="s-ingreso_sala" value={sheet.ingreso_sala} onChange={(v) => set("ingreso_sala", v)} placeholder="HH:MM" />
         {!compact && (
           <>
-            <SmallField label="Inicio emb." testID="s-inicio_emb" value={sheet.inicio_emb} onChangeText={(v) => set("inicio_emb", v)} placeholder="HH:MM" />
-            <SmallField label="Término emb." testID="s-termino_emb" value={sheet.termino_emb} onChangeText={(v) => set("termino_emb", v)} placeholder="HH:MM" />
+            <PickerField mode="time" label="Inicio emb." testID="s-inicio_emb" value={sheet.inicio_emb} onChange={(v) => set("inicio_emb", v)} placeholder="HH:MM" />
+            <PickerField mode="time" label="Término emb." testID="s-termino_emb" value={sheet.termino_emb} onChange={(v) => set("termino_emb", v)} placeholder="HH:MM" />
           </>
         )}
       </View>
@@ -194,8 +195,8 @@ export function CaseSheetForm({ sheet, onChange, compact }: Props) {
       <TextField label="Domicilio" testID="s-domicilio" value={sheet.domicilio} onChangeText={(v) => set("domicilio", v)} placeholder="Dirección" />
       <TextField label="Otro lugar" testID="s-otro_lugar" value={sheet.otro_lugar} onChangeText={(v) => set("otro_lugar", v)} placeholder="Especifica" />
       <View style={styles.row2}>
-        <SmallField label="Fecha de egreso" testID="s-fecha_egreso" value={sheet.fecha_egreso} onChangeText={(v) => set("fecha_egreso", v)} placeholder="AAAA-MM-DD" />
-        <SmallField label="Hora de egreso" testID="s-hora_egreso" value={sheet.hora_egreso} onChangeText={(v) => set("hora_egreso", v)} placeholder="HH:MM" />
+        <PickerField mode="date" label="Fecha de egreso" testID="s-fecha_egreso" value={sheet.fecha_egreso} onChange={(v) => set("fecha_egreso", v)} placeholder="Fecha" />
+        <PickerField mode="time" label="Hora de egreso" testID="s-hora_egreso" value={sheet.hora_egreso} onChange={(v) => set("hora_egreso", v)} placeholder="HH:MM" />
       </View>
       <TextField label="Responsable de la entrega" testID="s-responsable_entrega" value={sheet.responsable_entrega} onChangeText={(v) => set("responsable_entrega", v)} placeholder="Nombre" />
 

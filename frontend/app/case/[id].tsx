@@ -33,12 +33,14 @@ import { KFSummary, KFSummaryCard } from "@/src/components/KFSummaryCard";
 import { ReportShare } from "@/src/components/ReportShare";
 import { MixSheet } from "@/src/components/MixSheet";
 import { CaseCost } from "@/src/components/CaseCost";
+import { CAT_LABEL, FORM_LABEL, LogCategory, ProductLogModal } from "@/src/components/ProductLogModal";
+import { EmbalmingTimer } from "@/src/components/EmbalmingTimer";
 import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; results?: Record<string, any>; mix_confirmed?: boolean; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
 type Attachment = { att_id: string; label: string; filename: string; size: number; created_at: string; kind?: string };
-type LogEntry = { log_id: string; product: string; form: string; quantity: number; unit: string; created_at: string };
+type LogEntry = { log_id: string; product: string; form: string; quantity: number; unit: string; created_at: string; category?: LogCategory; lot?: string };
 type CaseData = {
   case_id: string;
   case_number?: string;
@@ -51,6 +53,8 @@ type CaseData = {
   notes: Note[];
   logbook?: LogEntry[];
   kf_summary?: KFSummary;
+  embalming_start?: string | null;
+  embalming_end?: string | null;
 };
 
 const CALCULATORS: { type: string; label: string; icon: ComponentProps<typeof Ionicons>["name"] }[] = [
@@ -62,7 +66,25 @@ const CALCULATORS: { type: string; label: string; icon: ComponentProps<typeof Io
 
 const ATT_LABELS = ["Certificado de Defunción", "Hoja de Autorización", "Etiquetas de Identificación"];
 
-type Tab = "calc" | "notes" | "logbook" | "docs" | "report";
+type Tab = "calc" | "notes" | "logbook" | "cavidad" | "topico" | "docs" | "report";
+
+const LOG_TABS: Record<"logbook" | "cavidad" | "topico", { cats: LogCategory[]; intro: string; empty: string }> = {
+  logbook: {
+    cats: ["bitacora"],
+    intro: "Arterial, co-inyectores y otros productos con su lote. Los líquidos se usan como co-inyectores en el cálculo de inyección.",
+    empty: "Aún no hay productos registrados.",
+  },
+  cavidad: {
+    cats: ["cavidad"],
+    intro: "Embalsamamiento de cavidad: producto, cantidad (oz o mL) y lote. No entra en el cálculo de inyección.",
+    empty: "Aún no hay productos de cavidad.",
+  },
+  topico: {
+    cats: ["topico", "putrefacto"],
+    intro: "Tópico (polvo, gel o crema en g) y putrefacto / gas (oz o mL), con su lote.",
+    empty: "Aún no hay productos tópicos ni de putrefacto.",
+  },
+};
 
 function fmtDate(iso: string) {
   return fmtDateTimeMx(iso);
@@ -92,12 +114,7 @@ export default function CaseDetail() {
 
   // logbook (bitácora de productos)
   const [products, setProducts] = useState<string[]>([]);
-  const [logModal, setLogModal] = useState(false);
-  const [logProduct, setLogProduct] = useState("");
-  const [logForm, setLogForm] = useState<"liquid" | "powder">("liquid");
-  const [logUnit, setLogUnit] = useState<"oz" | "ml" | "g">("oz");
-  const [logQty, setLogQty] = useState("");
-  const [savingLog, setSavingLog] = useState(false);
+  const [logCats, setLogCats] = useState<LogCategory[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -133,47 +150,6 @@ export default function CaseDetail() {
   useOfflineRefresh(load);
 
   // ---------- logbook ----------
-  const openLogModal = () => {
-    setLogProduct("");
-    setLogForm("liquid");
-    setLogUnit("oz");
-    setLogQty("");
-    setLogModal(true);
-  };
-
-  const selectForm = (f: "liquid" | "powder") => {
-    setLogForm(f);
-    setLogUnit(f === "powder" ? "g" : "oz");
-  };
-
-  const saveLogEntry = async () => {
-    const qty = parseFloat(logQty.replace(",", "."));
-    if (!logProduct.trim()) {
-      toast.show("Selecciona o escribe un producto", "error");
-      return;
-    }
-    if (!qty || qty <= 0) {
-      toast.show("Ingresa una cantidad válida", "error");
-      return;
-    }
-    setSavingLog(true);
-    try {
-      await api.post(`/cases/${id}/logbook`, {
-        product: logProduct.trim(),
-        form: logForm,
-        quantity: qty,
-        unit: logUnit,
-      });
-      toast.show("Producto registrado", "success");
-      setLogModal(false);
-      load();
-    } catch (e: any) {
-      toast.show(e?.detail || "No se pudo registrar el producto", "error");
-    } finally {
-      setSavingLog(false);
-    }
-  };
-
   const removeItem = async (path: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
@@ -469,12 +445,17 @@ export default function CaseDetail() {
         </Pressable>
       </View>
 
+      {/* Tiempo de embalsamamiento */}
+      <EmbalmingTimer caseId={String(id)} start={data.embalming_start} end={data.embalming_end} onChange={load} />
+
       {/* Segmented control */}
-      <View style={styles.segment}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0 }} contentContainerStyle={styles.segment}>
         {([
           { key: "calc", label: "Cálculos" },
           { key: "notes", label: "Notas" },
           { key: "logbook", label: "Bitácora" },
+          { key: "cavidad", label: "Cavidad" },
+          { key: "topico", label: "Tópico / Putref." },
           { key: "docs", label: "Docs" },
           { key: "report", label: "Reporte" },
         ] as const).map((s) => (
@@ -495,7 +476,7 @@ export default function CaseDetail() {
             </Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       {/* Content */}
       {tab === "calc" && (
@@ -596,24 +577,21 @@ export default function CaseDetail() {
         </KeyboardAvoidingView>
       )}
 
-      {tab === "logbook" && (
+      {(tab === "logbook" || tab === "cavidad" || tab === "topico") && (
         <View style={styles.flex}>
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-            <Text style={styles.docsIntro}>
-              Registra los productos empleados y su cantidad. Elige el producto de tus Fichas Técnicas o
-              escríbelo. Se incluirá en el reporte PDF.
-            </Text>
-            {(data.logbook || []).length === 0 ? (
+            <Text style={styles.docsIntro}>{LOG_TABS[tab].intro}</Text>
+            {(data.logbook || []).filter((e) => LOG_TABS[tab].cats.includes(e.category || "bitacora")).length === 0 ? (
               <View style={styles.docsEmpty}>
                 <Ionicons name="clipboard-outline" size={40} color={colors.onSurfaceTertiary} />
-                <Text style={styles.emptyInline}>Aún no hay productos registrados.</Text>
+                <Text style={styles.emptyInline}>{LOG_TABS[tab].empty}</Text>
               </View>
             ) : (
-              (data.logbook || []).map((e) => (
+              (data.logbook || []).filter((e) => LOG_TABS[tab].cats.includes(e.category || "bitacora")).map((e) => (
                 <View key={e.log_id} testID={`log-${e.log_id}`} style={styles.attRow}>
                   <View style={styles.attIcon}>
                     <Ionicons
-                      name={e.form === "powder" ? "cube-outline" : "water-outline"}
+                      name={e.form === "liquid" ? "water-outline" : "cube-outline"}
                       size={20}
                       color={colors.onSurface}
                     />
@@ -621,7 +599,8 @@ export default function CaseDetail() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.attLabel} numberOfLines={1}>{e.product}</Text>
                     <Text style={styles.attSub}>
-                      {e.form === "powder" ? "Polvo" : "Líquido"} · {e.quantity} {e.unit === "ml" ? "mL" : e.unit}
+                      {tab === "topico" ? `${CAT_LABEL[e.category || "bitacora"]} · ` : ""}
+                      {FORM_LABEL[e.form] || e.form} · {e.quantity} {e.unit === "ml" ? "mL" : e.unit} · Lote {e.lot || "—"}
                     </Text>
                   </View>
                   <Pressable
@@ -638,7 +617,7 @@ export default function CaseDetail() {
           </ScrollView>
           <Pressable
             testID="add-log-button"
-            onPress={openLogModal}
+            onPress={() => setLogCats(LOG_TABS[tab].cats)}
             style={({ pressed }) => [styles.fab, { bottom: spacing.lg }, pressed && { opacity: 0.85 }]}
           >
             <Ionicons name="add" size={22} color={colors.onSurfaceInverse} />
@@ -741,6 +720,7 @@ export default function CaseDetail() {
               hasMix={data.calculations.some((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)}
               confirmed={!!([...data.calculations].reverse().find((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)?.mix_confirmed)}
               canUndo={data.calculations.some((c) => c.mix_confirmed)}
+              fluidName={[...data.calculations].reverse().find((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)?.results?.fluid_name}
               onConfirmed={load}
             />
             <CaseCost
@@ -761,112 +741,14 @@ export default function CaseDetail() {
         </ScrollView>
       )}
 
-      {/* Add logbook entry modal */}
-      <Modal visible={logModal} transparent animationType="fade" onRequestClose={() => setLogModal(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => !savingLog && setLogModal(false)}>
-          <Pressable style={styles.modalSheet} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Registrar producto</Text>
-
-            <Text style={styles.modalSub}>Producto</Text>
-            <TextInput
-              testID="log-product-input"
-              value={logProduct}
-              onChangeText={setLogProduct}
-              placeholder="Escribe o elige de la lista"
-              placeholderTextColor={colors.onSurfaceTertiary}
-              style={styles.logInput}
-            />
-            {products.length > 0 && (
-              <ScrollView style={{ maxHeight: 120 }} keyboardShouldPersistTaps="handled">
-                <View style={styles.labelWrap}>
-                  {products.map((p) => (
-                    <Pressable
-                      key={p}
-                      testID={`log-prod-${p}`}
-                      onPress={() => setLogProduct(p)}
-                      style={[styles.labelChip, logProduct === p && styles.labelChipActive]}
-                    >
-                      <Text style={[styles.labelChipText, logProduct === p && styles.labelChipTextActive]}>{p}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
-            )}
-
-            <Text style={styles.modalSub}>Tipo</Text>
-            <View style={styles.rowChips}>
-              {([
-                { key: "liquid", label: "Líquido" },
-                { key: "powder", label: "Polvo" },
-              ] as const).map((f) => (
-                <Pressable
-                  key={f.key}
-                  testID={`log-form-${f.key}`}
-                  onPress={() => selectForm(f.key)}
-                  style={[styles.labelChip, logForm === f.key && styles.labelChipActive]}
-                >
-                  <Text style={[styles.labelChipText, logForm === f.key && styles.labelChipTextActive]}>{f.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={styles.modalSub}>Unidad</Text>
-            <View style={styles.rowChips}>
-              {(logForm === "liquid"
-                ? ([{ key: "oz", label: "Onzas (oz)" }, { key: "ml", label: "Mililitros (mL)" }] as const)
-                : ([{ key: "g", label: "Gramos (g)" }] as const)
-              ).map((u) => (
-                <Pressable
-                  key={u.key}
-                  testID={`log-unit-${u.key}`}
-                  onPress={() => setLogUnit(u.key)}
-                  style={[styles.labelChip, logUnit === u.key && styles.labelChipActive]}
-                >
-                  <Text style={[styles.labelChipText, logUnit === u.key && styles.labelChipTextActive]}>{u.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={styles.modalSub}>Cantidad</Text>
-            <TextInput
-              testID="log-qty-input"
-              value={logQty}
-              onChangeText={setLogQty}
-              placeholder="Ej. 16"
-              placeholderTextColor={colors.onSurfaceTertiary}
-              keyboardType="decimal-pad"
-              style={styles.logInput}
-            />
-            {logUnit === "oz" && parseFloat(logQty.replace(",", ".")) > 0 && (
-              <View testID="log-oz-ml" style={styles.ozRow}>
-                <Text style={styles.ozText}>
-                  {logQty} oz ≈ {(parseFloat(logQty.replace(",", ".")) * 29.5735).toFixed(1)} mL
-                </Text>
-                <Pressable
-                  testID="log-use-ml"
-                  hitSlop={8}
-                  style={styles.ozBtn}
-                  onPress={() => {
-                    setLogQty((parseFloat(logQty.replace(",", ".")) * 29.5735).toFixed(1));
-                    setLogUnit("ml");
-                  }}
-                >
-                  <Text style={styles.ozBtnText}>Guardar en mL</Text>
-                </Pressable>
-              </View>
-            )}
-
-            <Button
-              testID="log-save-button"
-              label="Guardar"
-              onPress={saveLogEntry}
-              loading={savingLog}
-              style={{ marginTop: spacing.lg, alignSelf: "stretch" }}
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
-
+      <ProductLogModal
+        visible={!!logCats}
+        caseId={String(id)}
+        categories={logCats || ["bitacora"]}
+        fichas={products}
+        onClose={() => setLogCats(null)}
+        onSaved={load}
+      />
 
       {/* Add attachment modal */}
       <Modal visible={addModal} transparent animationType="fade" onRequestClose={() => setAddModal(false)}>
@@ -981,12 +863,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   segmentBtn: {
-    flex: 1,
+    paddingHorizontal: spacing.md,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 40,
     paddingVertical: spacing.sm,
-    paddingHorizontal: 2,
     borderRadius: radius.sm,
   },
   segmentActive: { backgroundColor: colors.surfaceInverse },

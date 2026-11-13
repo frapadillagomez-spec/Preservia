@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Ionicons from "@react-native-vector-icons/ionicons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/src/api";
@@ -13,8 +13,18 @@ import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateMx } from "@/src/utils/mxtime";
 
-type Fluid = StockFluid;
-type Purchase = { purchase_id: string; fluid_name: string; bottles: number; total: number; unit_price: number; supplier?: string; date: string };
+type Fluid = StockFluid & { kind?: string; unit?: string; lots?: { lot_id: string; lot: string; stock: number }[] };
+type Supplier = { supplier_id: string; name: string; phone: string };
+const KINDS = [
+  { key: "arterial", label: "Arterial" },
+  { key: "coinyector", label: "Co-inyector" },
+  { key: "cavidad", label: "Cavidad" },
+  { key: "topico", label: "Tópico" },
+  { key: "putrefacto", label: "Putrefacto / gas" },
+  { key: "otro", label: "Otro" },
+];
+const EMPTY_FORM = { name: "", index: "", bottle: "473", stock: "", lot: "", kind: "arterial" };
+type Purchase = { purchase_id: string; fluid_name: string; bottles: number; total: number; unit_price: number; supplier?: string; lot?: string; date: string };
 
 const n = (s: string) => parseFloat((s || "").replace(",", "."));
 
@@ -26,14 +36,22 @@ export default function Inventory() {
   const [items, setItems] = useState<Fluid[] | null>(null);
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", index: "", bottle: "473", stock: "" });
+  const [form, setForm] = useState({ ...EMPTY_FORM });
   const [cfg, setCfg] = useState<Record<string, { min: string; price: string }>>({});
   const [openCfg, setOpenCfg] = useState<string | null>(null);
   const [shopping, setShopping] = useState(false);
   const [order, setOrder] = useState<Record<string, string>>({});
   const [buyFor, setBuyFor] = useState<string | null>(null);
-  const [buy, setBuy] = useState({ bottles: "", total: "", supplier: "" });
+  const [buy, setBuy] = useState({ bottles: "", total: "", supplier: "", lot: "" });
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [orderTo, setOrderTo] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      api.get<{ items: Supplier[] }>("/suppliers").then((r) => setSuppliers(r.items || [])).catch(() => {});
+    }, []),
+  );
 
   const loadPurchases = useCallback(() => {
     api.get<{ items: Purchase[] }>("/purchases").then((r) => setPurchases(r.items || [])).catch(() => {});
@@ -53,9 +71,10 @@ export default function Inventory() {
         bottles: n(buy.bottles),
         total: n(buy.total),
         supplier: buy.supplier.trim(),
+        lot: buy.lot.trim(),
       });
       setItems((list) => (list || []).map((x) => (x.item_id === f.item_id ? { ...x, stock_bottles: r.stock, price_per_bottle: r.price_per_bottle } : x)));
-      setBuy({ bottles: "", total: "", supplier: "" });
+      setBuy({ bottles: "", total: "", supplier: "", lot: "" });
       setBuyFor(null);
       loadPurchases();
       showToast(`Compra registrada: ahora ${r.stock} botellas a ${mxn(r.price_per_bottle)} c/u`, "success");
@@ -104,12 +123,13 @@ export default function Inventory() {
   const sendOrder = () => {
     const lines = (items || [])
       .filter((f) => n(order[f.item_id] ?? "") > 0)
-      .map((f) => `• ${f.name} (Index ${f.index_pct}%, ${f.bottle_ml || 473} mL): ${n(order[f.item_id])} botella${n(order[f.item_id]) === 1 ? "" : "s"}`);
+      .map((f) => `• ${f.name}${(f.kind || "arterial") === "arterial" ? ` (Index ${f.index_pct}%` : " ("}${(f.kind || "arterial") === "arterial" ? ", " : ""}${f.bottle_ml || 473} ${f.unit === "g" ? "g" : "mL"}): ${n(order[f.item_id])} envase${n(order[f.item_id]) === 1 ? "" : "s"}`);
     if (lines.length === 0) {
       showToast("Escribe cuántas botellas pedir de al menos un fluido", "error");
       return;
     }
-    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(["*Pedido de fluidos*", ...lines].join("\n"))}`);
+    const phone = suppliers.find((s) => s.supplier_id === orderTo)?.phone || "";
+    Linking.openURL(`https://wa.me/${phone}?text=${encodeURIComponent(["*Pedido de fluidos*", ...lines].join("\n"))}`);
   };
 
   const load = useCallback(() => {
@@ -125,30 +145,49 @@ export default function Inventory() {
     load();
   }, [load]);
 
-  const patch = async (f: Fluid, body: { delta?: number; set?: number }) => {
+  const patchLot = async (f: Fluid, lotId: string, delta: number) => {
     try {
-      const r = await api.patch<{ item: Fluid }>(`/fluids/${f.item_id}/stock`, body);
-      setItems((list) => (list || []).map((x) => (x.item_id === f.item_id ? { ...x, stock_bottles: r.item.stock_bottles } : x)));
-      setEdit((e) => ({ ...e, [f.item_id]: "" }));
+      await api.patch(`/fluids/${f.item_id}/lots/${lotId}`, { delta });
+      load();
     } catch (e: any) {
       toast.show(e?.detail || "No se pudo actualizar (requiere conexión)", "error");
     }
   };
 
+  const addLot = async (f: Fluid) => {
+    const lot = (edit[f.item_id] ?? "").trim();
+    const stock = n(edit[`${f.item_id}_s`] ?? "") || 0;
+    if (!lot) return toast.show("Escribe el número de lote", "error");
+    try {
+      await api.post(`/fluids/${f.item_id}/lots`, { lot, stock });
+      setEdit((e) => ({ ...e, [f.item_id]: "", [`${f.item_id}_s`]: "" }));
+      load();
+    } catch (e: any) {
+      toast.show(e?.detail || "No se pudo agregar el lote", "error");
+    }
+  };
+
   const add = async () => {
     const idx = n(form.index);
-    if (!form.name.trim() || !(idx > 0 && idx <= 100)) {
-      toast.show("Escribe nombre e Index (0–100 %)", "error");
+    if (!form.name.trim() || (form.kind === "arterial" && !(idx > 0 && idx <= 100))) {
+      toast.show(form.kind === "arterial" ? "Escribe nombre e Index (0–100 %)" : "Escribe el nombre", "error");
+      return;
+    }
+    if (n(form.stock) > 0 && !form.lot.trim()) {
+      toast.show("Escribe el número de lote de la existencia", "error");
       return;
     }
     try {
       await api.post("/fluids", {
         name: form.name.trim(),
-        index_pct: idx,
+        kind: form.kind,
+        unit: form.kind === "topico" ? "g" : "ml",
+        index_pct: form.kind === "arterial" ? idx : 0,
         bottle_ml: n(form.bottle) > 0 ? n(form.bottle) : 473,
         stock_bottles: n(form.stock) >= 0 ? n(form.stock) : 0,
+        lot: form.lot.trim() || "Sin lote",
       });
-      setForm({ name: "", index: "", bottle: "473", stock: "" });
+      setForm({ ...EMPTY_FORM });
       setAdding(false);
       load();
     } catch (e: any) {
@@ -186,7 +225,8 @@ export default function Inventory() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{f.name}</Text>
                   <Text style={styles.sub}>
-                    Index {f.index_pct}% · botella {f.bottle_ml || 473} mL · mínimo {minStock(f)}
+                    {KINDS.find((k) => k.key === (f.kind || "arterial"))?.label}
+                    {(f.kind || "arterial") === "arterial" ? ` · Index ${f.index_pct}%` : ""} · envase {f.bottle_ml || 473} {f.unit === "g" ? "g" : "mL"} · mínimo {minStock(f)}
                     {f.price_per_bottle !== undefined ? ` · ${mxn(f.price_per_bottle)}/botella` : ""}
                   </Text>
                   <Text testID={`inv-stock-${f.item_id}`} style={[styles.stock, low && { color: colors.error }]}>
@@ -194,32 +234,41 @@ export default function Inventory() {
                     {low ? " · por agotarse" : ""}
                   </Text>
                 </View>
-                <View style={styles.controls}>
-                  <Pressable testID={`inv-minus-${f.item_id}`} onPress={() => patch(f, { delta: -1 })} style={styles.round}>
-                    <Ionicons name="remove" size={20} color={colors.onSurface} />
-                  </Pressable>
-                  <Pressable testID={`inv-plus-${f.item_id}`} onPress={() => patch(f, { delta: 1 })} style={styles.round}>
-                    <Ionicons name="add" size={20} color={colors.onSurface} />
-                  </Pressable>
-                </View>
-                <View style={styles.setRow}>
-                  <TextInput
-                    testID={`inv-set-input-${f.item_id}`}
-                    value={edit[f.item_id] ?? ""}
-                    onChangeText={(t) => setEdit((e) => ({ ...e, [f.item_id]: t }))}
-                    placeholder="Fijar existencia"
-                    placeholderTextColor={colors.onSurfaceTertiary}
-                    keyboardType="decimal-pad"
-                    style={styles.input}
-                  />
-                  <Pressable
-                    testID={`inv-set-${f.item_id}`}
-                    disabled={!(n(edit[f.item_id] ?? "") >= 0)}
-                    onPress={() => patch(f, { set: n(edit[f.item_id] ?? "") })}
-                    style={styles.setBtn}
-                  >
-                    <Text style={styles.setText}>Fijar</Text>
-                  </Pressable>
+                <View style={styles.lotsBox}>
+                  {(f.lots || []).map((l) => (
+                    <View key={l.lot_id} testID={`inv-lot-${l.lot_id}`} style={styles.lotRow}>
+                      <Text style={styles.orderName} numberOfLines={1}>Lote {l.lot}</Text>
+                      <Text style={styles.lotStock}>{l.stock}</Text>
+                      <Pressable testID={`inv-lot-minus-${l.lot_id}`} onPress={() => patchLot(f, l.lot_id, -1)} style={styles.round}>
+                        <Ionicons name="remove" size={18} color={colors.onSurface} />
+                      </Pressable>
+                      <Pressable testID={`inv-lot-plus-${l.lot_id}`} onPress={() => patchLot(f, l.lot_id, 1)} style={styles.round}>
+                        <Ionicons name="add" size={18} color={colors.onSurface} />
+                      </Pressable>
+                    </View>
+                  ))}
+                  <View style={styles.setRow}>
+                    <TextInput
+                      testID={`inv-newlot-${f.item_id}`}
+                      value={edit[f.item_id] ?? ""}
+                      onChangeText={(t) => setEdit((e) => ({ ...e, [f.item_id]: t }))}
+                      placeholder="N.º de lote nuevo"
+                      placeholderTextColor={colors.onSurfaceTertiary}
+                      style={styles.input}
+                    />
+                    <TextInput
+                      testID={`inv-newlot-stock-${f.item_id}`}
+                      value={edit[`${f.item_id}_s`] ?? ""}
+                      onChangeText={(t) => setEdit((e) => ({ ...e, [`${f.item_id}_s`]: t }))}
+                      placeholder="Envases"
+                      placeholderTextColor={colors.onSurfaceTertiary}
+                      keyboardType="decimal-pad"
+                      style={[styles.input, { flexGrow: 0, flexShrink: 0, width: 90 }]}
+                    />
+                    <Pressable testID={`inv-newlot-save-${f.item_id}`} onPress={() => addLot(f)} style={styles.setBtn}>
+                      <Text style={styles.setText}>Agregar</Text>
+                    </Pressable>
+                  </View>
                 </View>
                 {openCfg === f.item_id ? (
                   <View style={styles.cfgBox}>
@@ -252,7 +301,7 @@ export default function Inventory() {
                       <Ionicons name="settings-outline" size={16} color={colors.onSurface} />
                       <Text style={styles.cfgText}>Mínimo y precio</Text>
                     </Pressable>
-                    <Pressable testID={`inv-buy-${f.item_id}`} onPress={() => { setBuy({ bottles: "", total: "", supplier: "" }); setBuyFor(buyFor === f.item_id ? null : f.item_id); }} style={styles.cfgLink}>
+                    <Pressable testID={`inv-buy-${f.item_id}`} onPress={() => { setBuy({ bottles: "", total: "", supplier: "", lot: "" }); setBuyFor(buyFor === f.item_id ? null : f.item_id); }} style={styles.cfgLink}>
                       <Ionicons name="bag-add-outline" size={16} color={colors.onSurface} />
                       <Text style={styles.cfgText}>Registrar compra</Text>
                     </Pressable>
@@ -281,6 +330,23 @@ export default function Inventory() {
                       />
                     </View>
                     <TextInput
+                      testID={`buy-lot-${f.item_id}`}
+                      value={buy.lot}
+                      onChangeText={(t) => setBuy({ ...buy, lot: t })}
+                      placeholder="Número de lote de la compra"
+                      placeholderTextColor={colors.onSurfaceTertiary}
+                      style={[styles.input, { marginTop: spacing.sm }]}
+                    />
+                    {suppliers.length > 0 && (
+                      <View style={[styles.chipRow, { marginTop: spacing.sm }]}>
+                        {suppliers.map((s) => (
+                          <Pressable key={s.supplier_id} testID={`buy-sup-${s.supplier_id}`} onPress={() => setBuy({ ...buy, supplier: s.name })} style={[styles.kchip, buy.supplier === s.name && styles.kchipOn]}>
+                            <Text style={[styles.kchipText, buy.supplier === s.name && styles.kchipTextOn]}>{s.name}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                    <TextInput
                       testID={`buy-supplier-${f.item_id}`}
                       value={buy.supplier}
                       onChangeText={(t) => setBuy({ ...buy, supplier: t })}
@@ -299,17 +365,28 @@ export default function Inventory() {
 
         {adding ? (
           <View style={styles.addBox}>
-            <Field testID="inv-new-name" label="Nombre del arterial" value={form.name} onChangeText={(t) => setForm({ ...form, name: t })} placeholder="Ej. Introfiant" />
-            <Field testID="inv-new-index" label="Index (%)" value={form.index} onChangeText={(t) => setForm({ ...form, index: t })} keyboardType="decimal-pad" placeholder="Ej. 25" />
-            <Field testID="inv-new-bottle" label="Tamaño de botella (mL)" value={form.bottle} onChangeText={(t) => setForm({ ...form, bottle: t })} keyboardType="decimal-pad" />
-            <Field testID="inv-new-stock" label="Botellas en existencia" value={form.stock} onChangeText={(t) => setForm({ ...form, stock: t })} keyboardType="decimal-pad" placeholder="Ej. 12" />
+            <Field testID="inv-new-name" label="Nombre del producto" value={form.name} onChangeText={(t) => setForm({ ...form, name: t })} placeholder="Ej. Introfiant" />
+            <Text style={styles.sub}>Tipo de producto</Text>
+            <View style={[styles.chipRow, { marginBottom: spacing.md }]}>
+              {KINDS.map((k) => (
+                <Pressable key={k.key} testID={`inv-kind-${k.key}`} onPress={() => setForm({ ...form, kind: k.key, bottle: k.key === "topico" ? "100" : form.bottle })} style={[styles.kchip, form.kind === k.key && styles.kchipOn]}>
+                  <Text style={[styles.kchipText, form.kind === k.key && styles.kchipTextOn]}>{k.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {form.kind === "arterial" && (
+              <Field testID="inv-new-index" label="Index (%)" value={form.index} onChangeText={(t) => setForm({ ...form, index: t })} keyboardType="decimal-pad" placeholder="Ej. 25" />
+            )}
+            <Field testID="inv-new-bottle" label={form.kind === "topico" ? "Tamaño del envase (g)" : "Tamaño del envase (mL)"} value={form.bottle} onChangeText={(t) => setForm({ ...form, bottle: t })} keyboardType="decimal-pad" />
+            <Field testID="inv-new-lot" label="Número de lote" value={form.lot} onChangeText={(t) => setForm({ ...form, lot: t })} placeholder="Ej. A-2311" />
+            <Field testID="inv-new-stock" label="Envases en existencia de ese lote" value={form.stock} onChangeText={(t) => setForm({ ...form, stock: t })} keyboardType="decimal-pad" placeholder="Ej. 12" />
             <View style={{ flexDirection: "row", gap: spacing.sm }}>
               <Button testID="inv-cancel" label="Cancelar" variant="ghost" onPress={() => setAdding(false)} style={{ flex: 1 }} />
               <Button testID="inv-save" label="Guardar" icon="checkmark" onPress={add} style={{ flex: 1 }} />
             </View>
           </View>
         ) : (
-          <Button testID="inv-add" label="Agregar fluido" icon="add-circle-outline" variant="outline" onPress={() => setAdding(true)} style={{ marginTop: spacing.md }} />
+          <Button testID="inv-add" label="Agregar producto" icon="add-circle-outline" variant="outline" onPress={() => setAdding(true)} style={{ marginTop: spacing.md }} />
         )}
 
         {!!items?.length && (
@@ -337,11 +414,22 @@ export default function Inventory() {
                       placeholder="0"
                       placeholderTextColor={colors.onSurfaceTertiary}
                       keyboardType="decimal-pad"
-                      style={[styles.input, { flex: 0, width: 80, textAlign: "center" }]}
+                      style={[styles.input, { flexGrow: 0, flexShrink: 0, width: 80, textAlign: "center" }]}
                     />
                   </View>
                 ))}
-                <Button testID="inv-order-send" label="Enviar por WhatsApp" icon="logo-whatsapp" onPress={sendOrder} style={{ marginTop: spacing.sm }} />
+                <Text style={styles.sub}>Enviar a:</Text>
+                <View style={styles.chipRow}>
+                  {suppliers.map((s) => (
+                    <Pressable key={s.supplier_id} testID={`inv-order-sup-${s.supplier_id}`} onPress={() => setOrderTo(orderTo === s.supplier_id ? null : s.supplier_id)} style={[styles.kchip, orderTo === s.supplier_id && styles.kchipOn]}>
+                      <Text style={[styles.kchipText, orderTo === s.supplier_id && styles.kchipTextOn]}>{s.name}</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable testID="inv-suppliers" onPress={() => router.push("/library/suppliers")} style={styles.kchip}>
+                    <Text style={styles.kchipText}>+ Proveedores</Text>
+                  </Pressable>
+                </View>
+                <Button testID="inv-order-send" label={orderTo ? `Enviar a ${suppliers.find((s) => s.supplier_id === orderTo)?.name}` : "Enviar por WhatsApp"} icon="logo-whatsapp" onPress={sendOrder} style={{ marginTop: spacing.sm }} />
               </>
             )}
           </View>
@@ -353,7 +441,7 @@ export default function Inventory() {
             {purchases.slice(0, 30).map((p) => (
               <View key={p.purchase_id} testID={`purchase-${p.purchase_id}`} style={styles.orderRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.orderName}>{p.fluid_name} · {p.bottles} bot.</Text>
+                  <Text style={styles.orderName}>{p.fluid_name} · {p.bottles} env.{p.lot ? ` · Lote ${p.lot}` : ""}</Text>
                   <Text style={styles.sub}>
                     {fmtDateMx(p.date)} · {mxn(p.total)} ({mxn(p.unit_price)} c/u){p.supplier ? ` · ${p.supplier}` : ""}
                   </Text>
@@ -405,6 +493,14 @@ const styles = StyleSheet.create({
   controls: { flexDirection: "row", gap: spacing.sm },
   round: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
   setRow: { flexDirection: "row", gap: spacing.sm, width: "100%" },
+  lotsBox: { width: "100%", gap: spacing.xs },
+  lotRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  lotStock: { color: colors.onSurface, fontFamily: font.monoSemibold, fontSize: fontSize.base, minWidth: 44, textAlign: "right" },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  kchip: { minHeight: 40, justifyContent: "center", paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  kchipOn: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
+  kchipText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  kchipTextOn: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
   input: {
     flex: 1,
     minWidth: 0,

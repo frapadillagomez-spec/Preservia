@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
@@ -16,16 +16,33 @@ export function MixSheet({
   hasMix,
   confirmed,
   canUndo,
+  fluidName,
   onConfirmed,
 }: {
   caseId: string;
   hasMix: boolean;
   confirmed: boolean;
   canUndo: boolean;
+  fluidName?: string;
   onConfirmed: () => void;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState<"pdf" | "text" | "confirm" | "undo" | null>(null);
+  const [lots, setLots] = useState<{ lot_id: string; lot: string; stock: number }[]>([]);
+  const [lotId, setLotId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hasMix || confirmed || !fluidName) return;
+    api
+      .get<{ items: { name: string; lots?: { lot_id: string; lot: string; stock: number }[] }[] }>("/fluids")
+      .then((r) => {
+        const f = (r.items || []).find((x) => x.name.toLowerCase() === fluidName.toLowerCase());
+        const ls = f?.lots || [];
+        setLots(ls);
+        setLotId((ls.find((l) => l.stock > 0) || ls[0])?.lot_id ?? null);
+      })
+      .catch(() => {});
+  }, [hasMix, confirmed, fluidName]);
 
   const ask = (title: string, msg: string, ok: string, fn: () => void) => {
     if (Platform.OS === "web") {
@@ -70,7 +87,7 @@ export function MixSheet({
   const doConfirm = async () => {
     setBusy("confirm");
     try {
-      const r = await api.post<{ bottles: number; fluid: string | null; stock_left: number | null }>(`/cases/${caseId}/mix-confirm`, {});
+      const r = await api.post<{ bottles: number; fluid: string | null; stock_left: number | null }>(`/cases/${caseId}/mix-confirm`, { lot_id: lotId });
       toast.show(
         r.fluid
           ? `Mezcla registrada en la Bitácora. ${r.fluid}: −${r.bottles} botellas, quedan ${r.stock_left}`
@@ -135,7 +152,21 @@ export function MixSheet({
           {confirmed ? (
             <Text testID="mix-confirmed" style={styles.done}>✓ Mezcla confirmada: registrada en la Bitácora y descontada del inventario</Text>
           ) : (
-            <Button testID="mix-confirm" label="Confirmar mezcla" icon="checkmark-done-outline" onPress={confirm} loading={busy === "confirm"} disabled={!!busy} />
+            <>
+              {lots.length > 0 && (
+                <View style={styles.lots}>
+                  <Text style={styles.sub}>Lote del arterial a descontar:</Text>
+                  <View style={styles.row}>
+                    {lots.map((l) => (
+                      <Pressable key={l.lot_id} testID={`mix-lot-${l.lot_id}`} onPress={() => setLotId(l.lot_id)} style={[styles.chip, lotId === l.lot_id && styles.chipOn]}>
+                        <Text style={[styles.chipText, lotId === l.lot_id && styles.chipTextOn]}>{l.lot} · {l.stock}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
+              <Button testID="mix-confirm" label="Confirmar mezcla" icon="checkmark-done-outline" onPress={confirm} loading={busy === "confirm"} disabled={!!busy} />
+            </>
           )}
           {canUndo && (
             <Button
@@ -161,4 +192,9 @@ const styles = StyleSheet.create({
   sub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2, marginBottom: spacing.md },
   row: { flexDirection: "row", gap: spacing.sm },
   done: { color: colors.success, fontFamily: font.medium, fontSize: fontSize.sm },
+  lots: { marginBottom: spacing.sm },
+  chip: { minHeight: 40, justifyContent: "center", paddingHorizontal: spacing.md, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, flexWrap: "wrap" },
+  chipOn: { backgroundColor: colors.surfaceInverse, borderColor: colors.surfaceInverse },
+  chipText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm },
+  chipTextOn: { color: colors.onSurfaceInverse, fontFamily: font.semibold },
 });

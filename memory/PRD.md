@@ -49,3 +49,11 @@ Herramienta móvil profesional para embalsamadores/tanatopraxia que combina cál
 - Done: Co-injector catalog (/api/coinjectors), PDF "Resumen K y F" (Vtotal, V1, co-inyectores, agua), Historial factors (K/F avg, top conditions, top co-injectors), PIN lock (expo-local-authentication, salted SHA-256 PIN, persistent attempts + escalating cooldown, relock after 60 s in background).
 - Done: Fluid templates (/api/fluids, wizard step 2 chips), before/after photos (attachments kind photo + stage, sheet screen, PDF "Fotografias del caso"), full backup (/api/backup, /api/backup/restore, Perfil card).
 - Backlog: PIN/biometric lock (P2).
+
+## Updates (iterations 18-24)
+- Wizard: V1·C1 = Vtotal·Cpi (3 steps: Masa magra → Vtotal → Arterial y V1); co-injectors prefilled from Bitácora (category bitacora, excluding DermaFix/BioFix/OncoShield/LeakFix, mix entries), shown in liters; bottles to use (bottle_ml per fluid, default 473).
+- Report tab: share buttons (OneDrive/Drive/iCloud/Dropbox/WhatsApp via share sheet), Hoja de mezcla (PDF w/ signature + WhatsApp text), Confirmar/Anular mezcla (lot selection), Costo en fluidos + precio del servicio + margen (PDF shows only service price).
+- Library: Conversor de unidades (favorites), Inventario (all product kinds, separate stock per lot, min stock, price, purchases with lot, shopping list to supplier), Precios de productos, Proveedores.
+- Case: Cavidad tab, Tópico/Putrefacto tab, lot required on all logbook entries (deducts from inventory lot), Iniciar/Terminar embalming timer, calendar/clock pickers in case form & Hoja del caso.
+- Stats: historial de mezclas, costos (usado vs comprado, promedio por caso).
+- Endpoints: /fluids/{id}/lots, /suppliers, /purchases, /prices, /cases/{id}/mix-sheet|mix-confirm|mix-undo|cost|service-price|embalming.

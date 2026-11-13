@@ -46,6 +46,20 @@ export function mxToISO(dateStr: string, timeStr: string): string | null {
   return isNaN(dt.getTime()) ? null : dt.toISOString();
 }
 
+/** Duración legible entre inicio y término (horario de México); "" si falta algo o es negativa. */
+export function durationText(sd: string, st: string, ed: string, et: string): string {
+  if (!st.trim() || !et.trim()) return "";
+  return durationBetween(mxToISO(sd, st), mxToISO(ed, et));
+}
+
+/** Duración legible entre dos ISO. */
+export function durationBetween(a?: string | null, b?: string | null): string {
+  if (!a || !b) return "";
+  const mins = Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
+  if (!(mins >= 0)) return "";
+  return `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")} min`;
+}
+
 /** Fecha y hora actuales de México como ["AAAA-MM-DD", "HH:MM"]. */
 export function nowMxParts(): [string, string] {
   const d = mxNow();
