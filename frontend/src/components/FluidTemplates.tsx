@@ -6,10 +6,18 @@ import { api } from "@/src/api";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 
-type Fluid = { item_id: string; name: string; index_pct: number };
+type Fluid = { item_id: string; name: string; index_pct: number; bottle_ml?: number };
 
-/** Plantillas de fluidos arteriales: elegir el índice C1 con un toque o guardar el actual. */
-export function FluidTemplates({ c1, onPick }: { c1: string; onPick: (index: string, name: string) => void }) {
+/** Plantillas de fluidos arteriales: elegir el índice C1 (y tamaño de botella) con un toque o guardar el actual. */
+export function FluidTemplates({
+  c1,
+  bottleMl,
+  onPick,
+}: {
+  c1: string;
+  bottleMl: string;
+  onPick: (index: string, name: string, bottleMl: string) => void;
+}) {
   const [items, setItems] = useState<Fluid[]>([]);
   const [manage, setManage] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -33,8 +41,9 @@ export function FluidTemplates({ c1, onPick }: { c1: string; onPick: (index: str
     const idx = parseFloat(c1.replace(",", "."));
     if (!name.trim()) return setErr("Escribe el nombre del fluido");
     if (!(idx > 0 && idx <= 100)) return setErr("Primero escribe un índice C1 válido");
+    const bottle = parseFloat((bottleMl || "").replace(",", "."));
     try {
-      await api.post("/fluids", { name: name.trim(), index_pct: idx });
+      await api.post("/fluids", { name: name.trim(), index_pct: idx, bottle_ml: bottle > 0 ? bottle : 473 });
       setName("");
       setErr("");
       setSaving(false);
@@ -60,17 +69,17 @@ export function FluidTemplates({ c1, onPick }: { c1: string; onPick: (index: str
           <Pressable
             key={f.item_id}
             testID={`fluid-${f.item_id}`}
-            onPress={() => (manage ? api.del(`/fluids/${f.item_id}`).then(load).catch(() => setErr("No se pudo eliminar")) : onPick(String(f.index_pct), f.name))}
+            onPress={() => (manage ? api.del(`/fluids/${f.item_id}`).then(load).catch(() => setErr("No se pudo eliminar")) : onPick(String(f.index_pct), f.name, String(f.bottle_ml || 473)))}
             style={[styles.chip, manage && styles.chipManage]}
           >
             <Ionicons name={manage ? "close-circle" : "flask-outline"} size={16} color={manage ? colors.error : colors.onSurfaceSecondary} />
-            <Text style={styles.chipText}>{f.name} · {f.index_pct}%</Text>
+            <Text style={styles.chipText}>{f.name} · {f.index_pct}% · {f.bottle_ml || 473} mL</Text>
           </Pressable>
         ))}
       </View>
       {saving ? (
         <View>
-          <Field testID="fluid-name" label={`Nombre del fluido (C1 ${c1 || "—"}%)`} value={name} onChangeText={setName} placeholder="Ej. Arterial 25 índice" />
+          <Field testID="fluid-name" label={`Nombre del fluido (C1 ${c1 || "—"}% · botella ${bottleMl || 473} mL)`} value={name} onChangeText={setName} placeholder="Ej. Arterial 25 índice" />
           {!!err && <Text testID="fluid-error" style={styles.err}>{err}</Text>}
           <View style={styles.row}>
             <Button testID="fluid-cancel" label="Cancelar" variant="ghost" onPress={() => { setSaving(false); setErr(""); }} style={{ flex: 1 }} />

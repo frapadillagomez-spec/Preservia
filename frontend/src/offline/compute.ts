@@ -128,6 +128,7 @@ export function computeLocal(type: string, inputs: Record<string, any>): { resul
       if (conc + coMl > tot) throw new Error("El concentrado y los co-inyectores superan el volumen total de inyección");
       const v1L = r(conc / 1000, 2);
       const fluidName = String(inputs.fluid_name || "").trim().slice(0, 80);
+      const bottleMl = Number(inputs.bottle_ml) > 0 && Number(inputs.bottle_ml) <= 20000 ? Number(inputs.bottle_ml) : 473;
       const instruction = `Agregar ${v1L.toFixed(2)} L de Arterial ${fluidName ? fluidName + " " : ""}Index ${c1}% a la bomba de inyección`;
       const res: Record<string, any> = {
         v1_l: v1L,
@@ -145,7 +146,8 @@ export function computeLocal(type: string, inputs: Record<string, any>): { resul
         coinjectors: coinj,
         formaldehyde_ml: r(form, 0),
         water_injection_ml: r(Math.max(tot - form, 0), 0),
-        bottles: r(conc / 473, 2),
+        bottles: r(conc / bottleMl, 2),
+        bottle_ml: r(bottleMl, 1),
         desired_index_pct: c2,
         fluid_index_pct: c1,
         case_type: "Factor K y F (hoja del caso)",

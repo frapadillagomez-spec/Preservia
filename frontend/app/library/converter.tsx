@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Ionicons from "@react-native-vector-icons/ionicons";
@@ -7,7 +7,11 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Field } from "@/src/components/ui";
+import { storage } from "@/src/utils/storage";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+
+type Fav = { cat: string; from: string; value: string };
+const FAV_KEY = "converter_favorites";
 
 type Unit = { key: string; label: string; factor?: number };
 type Category = { key: string; label: string; icon: ComponentProps<typeof Ionicons>["name"]; units: Unit[] };
@@ -110,6 +114,38 @@ export default function Converter() {
   const cat = CATEGORIES.find((c) => c.key === catKey)!;
   const [from, setFrom] = useState(cat.units[0].key);
   const [value, setValue] = useState("1");
+  const [favs, setFavs] = useState<Fav[]>([]);
+
+  useEffect(() => {
+    storage.getItem(FAV_KEY, "[]").then((raw) => {
+      try {
+        setFavs(JSON.parse(String(raw || "[]")));
+      } catch {
+        setFavs([]);
+      }
+    });
+  }, []);
+
+  const saveFavs = (list: Fav[]) => {
+    setFavs(list);
+    storage.setItem(FAV_KEY, JSON.stringify(list));
+  };
+  const isFav = favs.some((f) => f.cat === catKey && f.from === from && f.value === value);
+  const toggleFav = () =>
+    saveFavs(
+      isFav
+        ? favs.filter((f) => !(f.cat === catKey && f.from === from && f.value === value))
+        : [{ cat: catKey, from, value }, ...favs].slice(0, 12),
+    );
+  const applyFav = (f: Fav) => {
+    setCatKey(f.cat);
+    setFrom(f.from);
+    setValue(f.value);
+  };
+  const favLabel = (f: Fav) => {
+    const c = CATEGORIES.find((x) => x.key === f.cat);
+    return `${f.value} ${c?.units.find((u) => u.key === f.from)?.label ?? ""}`;
+  };
 
   const pickCat = (c: Category) => {
     setCatKey(c.key);
@@ -130,7 +166,9 @@ export default function Converter() {
           <Ionicons name="chevron-back" size={26} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Conversor de unidades</Text>
-        <View style={{ width: 26 }} />
+        <Pressable testID="conv-fav-toggle" onPress={toggleFav} hitSlop={12} disabled={isNaN(parseFloat(value.replace(",", ".")))}>
+          <Ionicons name={isFav ? "star" : "star-outline"} size={24} color={colors.onSurface} />
+        </Pressable>
       </View>
 
       <View>
@@ -155,6 +193,18 @@ export default function Converter() {
         bottomOffset={24}
         showsVerticalScrollIndicator={false}
       >
+        {favs.length > 0 && (
+          <View style={{ marginBottom: spacing.md }}>
+            <Text style={styles.label}>Favoritas</Text>
+            <View style={styles.unitRow}>
+              {favs.map((f, i) => (
+                <Pressable key={`${f.cat}-${f.from}-${f.value}-${i}`} testID={`conv-fav-${i}`} onPress={() => applyFav(f)} style={styles.unit}>
+                  <Text style={styles.chipText}>★ {favLabel(f)}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
         <Field
           testID="conv-value"
           label={`Valor (${fromLabel})`}

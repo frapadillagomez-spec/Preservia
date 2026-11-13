@@ -447,6 +447,12 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                 formaldehyde_ml = (c2 / 100.0) * total_ml
                 v1_l = round(conc_ml / 1000.0, 2)
                 fluid_name = str(inputs.get("fluid_name") or "").strip()[:80]
+                try:
+                    bottle_ml = float(inputs.get("bottle_ml") or 473.0)
+                except (TypeError, ValueError):
+                    bottle_ml = 473.0
+                if not (0 < bottle_ml <= 20000):
+                    bottle_ml = 473.0
                 instruction = (f"Agregar {v1_l:.2f} L de Arterial {fluid_name + ' ' if fluid_name else ''}"
                                f"Index {c1:g}% a la bomba de inyección")
                 results = {
@@ -465,7 +471,8 @@ def compute(calc_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
                     "coinjectors": coinj,
                     "formaldehyde_ml": round(formaldehyde_ml, 0),
                     "water_injection_ml": round(max(total_ml - formaldehyde_ml, 0), 0),
-                    "bottles": round(conc_ml / 473.0, 2),
+                    "bottles": round(conc_ml / bottle_ml, 2),
+                    "bottle_ml": round(bottle_ml, 1),
                     "desired_index_pct": c2,
                     "fluid_index_pct": c1,
                     "case_type": "Factor K y F (hoja del caso)",
@@ -1223,7 +1230,13 @@ async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_
         idx = 0
     if not name or not (0 < idx <= 100):
         raise HTTPException(status_code=400, detail="El fluido necesita nombre y un índice entre 0 y 100 %")
-    doc = {"name": name, "name_key": name.lower(), "index_pct": round(idx, 2),
+    try:
+        bottle_ml = float(payload.get("bottle_ml") or 473.0)
+    except (TypeError, ValueError):
+        bottle_ml = 473.0
+    if not (0 < bottle_ml <= 20000):
+        raise HTTPException(status_code=400, detail="El tamaño de botella debe estar entre 1 y 20000 mL")
+    doc = {"name": name, "name_key": name.lower(), "index_pct": round(idx, 2), "bottle_ml": round(bottle_ml, 1),
            "brand": str(payload.get("brand") or "").strip()[:80], "updated_at": now_iso()}
     existing = await db.fluid_templates.find_one({"user_id": user["user_id"], "name_key": doc["name_key"]}, {"_id": 0})
     if existing:
@@ -1848,6 +1861,74 @@ async def generate_report(case_id: str, user: Dict[str, Any] = Depends(get_curre
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     safe = (c.get("name") or "caso").replace(" ", "_")[:40]
     return {"filename": f"Preservia_{safe}.pdf", "pdf_base64": b64, "mime": "application/pdf"}
+
+
+def _mix_rows(r: Dict[str, Any]) -> List[List[str]]:
+    bottle_ml = float(r.get("bottle_ml") or 473.0)
+    rows = [
+        ["Arterial", f"{r.get('fluid_name') or 'Sin nombre'} · Index {float(r.get('fluid_index_pct') or 0):g}%"],
+        ["Concentración en el punto de inyección", f"{float(r.get('desired_index_pct') or 0):g}%"],
+        ["Volumen total (Vtotal)", f"{float(r.get('total_l') or 0):.2f} L"],
+        ["Arterial a agregar (V1)", f"{float(r.get('v1_l') or 0):.2f} L"],
+        ["Botellas de arterial", f"{float(r.get('bottles') or 0):.2f} (de {bottle_ml:g} mL)"],
+    ]
+    for c in r.get("coinjectors") or []:
+        rows.append([f"Co-inyector: {c.get('name', '')}", f"{float(c.get('volume_ml') or 0) / 1000.0:.3f} L"])
+    rows.append(["Agua a agregar", f"{float(r.get('water_ml') or 0) / 1000.0:.2f} L"])
+    return rows
+
+
+@api_router.get("/cases/{case_id}/mix-sheet")
+async def mix_sheet(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Hoja de mezcla de una página (PDF) + texto corto para WhatsApp, del último cálculo de inyección guardado."""
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    calc = next((x for x in reversed(c.get("calculations") or []) if (x.get("results") or {}).get("v1_l") is not None), None)
+    if not calc:
+        raise HTTPException(status_code=404, detail="Guarda primero un Cálculo de inyección en este caso")
+    r = calc["results"]
+    rows = _mix_rows(r)
+    who = c.get("deceased_name") or c.get("name") or "Caso"
+    lot = c.get("case_number") or ""
+    try:
+        when = datetime.fromisoformat(str(calc.get("created_at")).replace("Z", "+00:00")).astimezone(MX_TZ).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        when = "-"
+
+    buf = BytesIO()
+    d = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, leftMargin=18 * mm, rightMargin=18 * mm, bottomMargin=18 * mm)
+    st = getSampleStyleSheet()
+    ink = colors.HexColor("#0F172A")
+    title = ParagraphStyle("MTitle", parent=st["Title"], textColor=ink, fontSize=20, spaceAfter=4)
+    sub = ParagraphStyle("MSub", parent=st["Normal"], textColor=colors.HexColor("#64748B"), fontSize=10, spaceAfter=12)
+    big = ParagraphStyle("MBig", parent=st["Normal"], textColor=ink, fontSize=13, leading=18, spaceAfter=12, fontName="Helvetica-Bold")
+    cell = ParagraphStyle("MCell", parent=st["Normal"], textColor=ink, fontSize=11, leading=15)
+
+    def esc(v: str) -> str:
+        return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    tbl = Table([[Paragraph(esc(a), cell), Paragraph(f"<b>{esc(b)}</b>", cell)] for a, b in rows], colWidths=[90 * mm, 84 * mm])
+    tbl.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#F1F5F9")]),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+    ]))
+    d.build([
+        Paragraph("Hoja de mezcla", title),
+        Paragraph(esc(f"{who}{' · Lote ' + lot if lot else ''} · Cálculo del {when}"), sub),
+        Paragraph(esc(r.get("instruction") or ""), big),
+        tbl,
+        Spacer(1, 10),
+        Paragraph(esc(f"V1 × C1 = Vtotal × C punto de inyección · Agua = Vtotal − V1 − co-inyectores"), sub),
+    ])
+    text = "\n".join(
+        [f"*Hoja de mezcla* · {who}{' · Lote ' + lot if lot else ''}", r.get("instruction") or ""]
+        + [f"• {a}: {b}" for a, b in rows]
+    )
+    safe = who.replace(" ", "_")[:40]
+    return {"filename": f"Mezcla_{safe}.pdf", "pdf_base64": base64.b64encode(buf.getvalue()).decode("utf-8"), "text": text}
 
 
 # ----------------------------- Case attachments (scanned documents) -----------------------------

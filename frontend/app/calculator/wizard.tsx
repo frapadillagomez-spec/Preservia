@@ -46,6 +46,7 @@ export default function Wizard() {
   const [c2, setC2] = useState(""); // desired index
   const [c1, setC1] = useState(""); // fluid index (stock)
   const [fluidName, setFluidName] = useState("");
+  const [bottleMl, setBottleMl] = useState("473");
   // step 3 - volume: Vtotal = MM x K x F (K y F de la hoja del caso)
   const sheetInfo = useCaseSheetInfo(caseId);
   const [result, setResult] = useState<{ summary: string; results: Record<string, any> } | null>(null);
@@ -86,6 +87,7 @@ export default function Wizard() {
     desired_index_pct: num(c2),
     fluid_index_pct: num(c1),
     ...(fluidName ? { fluid_name: fluidName } : {}),
+    bottle_ml: num(bottleMl) > 0 && num(bottleMl) <= 20000 ? num(bottleMl) : 473,
     coinjectors: coinj,
   });
 
@@ -338,9 +340,11 @@ export default function Wizard() {
               </Text>
               <FluidTemplates
                 c1={c1}
-                onPick={(idx, name) => {
+                bottleMl={bottleMl}
+                onPick={(idx, name, bottle) => {
                   setC1(idx);
                   setFluidName(name);
+                  setBottleMl(bottle);
                   setResult(null);
                 }}
               />
@@ -364,6 +368,22 @@ export default function Wizard() {
                 keyboardType="decimal-pad"
                 placeholder="Ej. 2"
               />
+              <Field
+                testID="wiz-bottle"
+                label="Tamaño de botella del arterial (mL)"
+                value={bottleMl}
+                onChangeText={(t) => {
+                  setBottleMl(t);
+                  setResult(null);
+                }}
+                keyboardType="decimal-pad"
+                placeholder="473 (16 oz)"
+              />
+              {bottleMl !== "" && !(num(bottleMl) > 0 && num(bottleMl) <= 20000) && (
+                <Text testID="wiz-bottle-error" style={[styles.hintLine, { color: colors.error }]}>
+                  Tamaño de botella no válido: se usarán 473 mL (16 oz).
+                </Text>
+              )}
               <Text style={styles.hintLine}>Vtotal: {vtotal !== null ? `${vtotal.toFixed(2)} L` : "—"}</Text>
               {num(c1) > 0 && num(c2) > num(c1) && (
                 <Text testID="wiz-c-error" style={[styles.hintLine, { color: colors.error }]}>
@@ -395,6 +415,12 @@ export default function Wizard() {
                     {result.results.total_l} L × {result.results.desired_index_pct}% ÷ {result.results.fluid_index_pct}% = {result.results.v1_l} L
                   </Text>
                   <View style={styles.resultGrid}>
+                    <View style={styles.resultItem}>
+                      <Text style={styles.resultKey}>Botellas de arterial</Text>
+                      <Text testID="wiz-bottles" style={styles.resultNum}>
+                        {result.results.bottles} <Text style={styles.resultKey}>(de {result.results.bottle_ml} mL)</Text>
+                      </Text>
+                    </View>
                     <View style={styles.resultItem}>
                       <Text style={styles.resultKey}>Vtotal</Text>
                       <Text style={styles.resultNum}>{result.results.total_l} L</Text>

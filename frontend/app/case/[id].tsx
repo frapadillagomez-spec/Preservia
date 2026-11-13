@@ -31,6 +31,7 @@ import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateTimeMx } from "@/src/utils/mxtime";
 import { KFSummary, KFSummaryCard } from "@/src/components/KFSummaryCard";
 import { ReportShare } from "@/src/components/ReportShare";
+import { MixSheet } from "@/src/components/MixSheet";
 import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
 type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
@@ -734,6 +735,7 @@ export default function CaseDetail() {
               style={{ marginTop: spacing.md, alignSelf: "stretch" }}
             />
             <ReportShare caseId={String(id)} />
+            <MixSheet caseId={String(id)} />
           </View>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
@@ -824,6 +826,24 @@ export default function CaseDetail() {
               keyboardType="decimal-pad"
               style={styles.logInput}
             />
+            {logUnit === "oz" && parseFloat(logQty.replace(",", ".")) > 0 && (
+              <View testID="log-oz-ml" style={styles.ozRow}>
+                <Text style={styles.ozText}>
+                  {logQty} oz ≈ {(parseFloat(logQty.replace(",", ".")) * 29.5735).toFixed(1)} mL
+                </Text>
+                <Pressable
+                  testID="log-use-ml"
+                  hitSlop={8}
+                  style={styles.ozBtn}
+                  onPress={() => {
+                    setLogQty((parseFloat(logQty.replace(",", ".")) * 29.5735).toFixed(1));
+                    setLogUnit("ml");
+                  }}
+                >
+                  <Text style={styles.ozBtnText}>Guardar en mL</Text>
+                </Pressable>
+              </View>
+            )}
 
             <Button
               testID="log-save-button"
@@ -1016,6 +1036,10 @@ const styles = StyleSheet.create({
   modalSub: { color: colors.onSurfaceTertiary, fontFamily: font.medium, fontSize: fontSize.sm, marginTop: spacing.md, marginBottom: spacing.sm },
   labelWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   rowChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  ozRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.sm, minHeight: 44 },
+  ozText: { color: colors.onSurfaceSecondary, fontFamily: font.medium, fontSize: fontSize.sm, flex: 1 },
+  ozBtn: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong },
+  ozBtnText: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
   logInput: {
     backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,

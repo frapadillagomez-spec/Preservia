@@ -1,0 +1,38 @@
+{
+  "summary": "Tested all 4 new features end to end, on the backend and on the frontend at a 390x844 mobile viewport. Backend: 12/12 new tests in test_iter20_bottles_mixsheet.py pass, and so do 21/21 regression tests from iterations 18 and 19 plus the injection kf tests. Frontend: everything passes. (1) Bitácora oz→mL: typing 16 shows '16 oz ≈ 473.2 mL' and 8,5 shows '8,5 oz ≈ 251.4 mL'. log-use-ml (44px tall) switches the unit to mL and the quantity to 473.2, and the entry is saved as 473.2 ml. (2) Converter favorites: the star saves the current category+unit+value. Chips conv-fav-0/1 appear ('★ 2.5 mg', '★ 16 mL'), survive a reload, apply category/unit/value when tapped, and the star removes them when tapped again. (3) Wizard: wiz-bottle defaults to 473. Saving a fluid template posts bottle_ml and the chip reads 'TEST_FluidUI20 · 25% · 946 mL'. Picking the chip sets C1=25 and bottle=946. wiz-bottles shows '0.79 (de 946 mL)', which is correct: 751 mL / 946. Editing the bottle clears the old result, and the saved calc keeps bottle_ml=946. (4) Reporte mix sheet: mix-pdf downloads Mezcla_<name>.pdf (a valid 1-page PDF) and mix-whatsapp opens wa.me with the full text. For a case with no saved calc, both buttons show the toast 'Guarda primero un Cálculo de inyección en este caso'. The offline compute.ts matches the backend bottles/bottle_ml logic. No deprecated Expo packages and no SafeAreaView-from-react-native issues found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/cases/{id}/mix-sheet", "issue": "The code reads c.get('lot_number'), but no case has that field (it is not in CaseInput or anywhere else), so ' · Lote …' never shows. The lot-style id is case_number (PRV…). The header also uses case 'name', which defaults to case_number, rather than deceased_name. Reference: /app/backend/server.py:1892-1893,1924"},
+      {"endpoint": "GET /api/cases/{id}/mix-sheet", "issue": "datetime.fromisoformat(str(calc.get('created_at'))) returns a 500 if a calc has no created_at (for example legacy or imported data). Wrap it in a try/except. Reference: /app/backend/server.py:1894"},
+      {"endpoint": "POST /api/calculate (kf)", "issue": "/calculate accepts any positive bottle_ml with no upper limit, while /fluids rejects values above 20000. Validation should be the same in both. Reference: /app/backend/server.py:450-455"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Case > Reporte > Hoja de mezcla", "issues": ["At 390px the 'Texto WhatsApp' label wraps onto 2 lines inside its half-width button. Use a shorter label such as 'WhatsApp' or a smaller font."]},
+      {"screen": "Calculator wizard step 3", "issues": ["wiz-bottle has no client-side validation. If the user types 0 or text, the app quietly uses 473 while the field keeps showing the invalid value."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter20_bottles_mixsheet.py", "/app/test_reports/pytest/pytest_iter20.xml"],
+  "action_items": [
+    "Mix sheet: replace the non-existent lot_number with case_number, and consider including deceased_name in the PDF and WhatsApp header (server.py ~1892)",
+    "Mix sheet: guard the created_at parse so it cannot cause a 500",
+    "Optional: cap bottle_ml in /calculate at 20000 to match /fluids, and validate wiz-bottle in the UI",
+    "Optional: shorten the 'Texto WhatsApp' button label"
+  ],
+  "critical_code_review_comments": [
+    "On web, MixSheet downloads the PDF through a data-URI anchor. iOS Safari ignores the download attribute, but native builds use expo-sharing, so this is acceptable.",
+    "Converter favorites compare the raw value string, so '16' and '16.0' are stored as separate favorites. Minor.",
+    "case/[id].tsx is 1179 lines and should be split into tab components (it is over the 700-line guideline)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter20_bottles_mixsheet.py"],
+  "success_rate": {"backend": "100% (33/33 incl. regression)", "frontend": "100% of requested flows"},
+  "seed_data_creation": "Created test cases TEST_iter20_mix, TEST_iter20_ui and TEST_iter20_nocalc, plus fluids TEST_Fluid20, TEST_Fluid20b and TEST_FluidUI20. All were deleted by id. Converter favorites added in browser localStorage were removed through the UI.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The wizard's Vtotal step needs at least one sheet condition (for example condiciones:['diabetes_vascular']), otherwise it shows wiz-sheet-missing. The mix-sheet filename uses case 'name'. Logbook ml/oz entries are pre-filled into the wizard as co-injectors."
+}
