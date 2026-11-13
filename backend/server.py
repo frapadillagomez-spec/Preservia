@@ -1159,6 +1159,39 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
         ],
     }
 
+    # ---- Historial de mezclas confirmadas: arteriales y botellas por mes ----
+    mix_months: Dict[str, Dict[str, Any]] = {}
+    for c in cases:
+        for calc in c.get("calculations", []):
+            if not calc.get("mix_confirmed"):
+                continue
+            dt = _parse_dt(calc.get("mix_confirmed_at"))
+            if not dt:
+                continue
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(MX_TZ)
+            key = f"{dt.year}-{dt.month:02d}"
+            r = calc.get("results") or {}
+            name = str(r.get("fluid_name") or "").strip() or f"Index {float(r.get('fluid_index_pct') or 0):g}%"
+            mo = mix_months.setdefault(key, {"key": key, "label": f"{month_labels[dt.month - 1]} {dt.year}",
+                                              "mixes": 0, "total_bottles": 0.0, "fluids": {}})
+            mo["mixes"] += 1
+            b = float(r.get("bottles") or 0)
+            mo["total_bottles"] += b
+            fl = mo["fluids"].setdefault(name.lower(), {"name": name, "mixes": 0, "bottles": 0.0, "liters": 0.0})
+            fl["mixes"] += 1
+            fl["bottles"] += b
+            fl["liters"] += float(r.get("concentrate_ml") or 0) / 1000.0
+    mixes_by_month = []
+    for key in sorted(mix_months.keys(), reverse=True)[:6]:
+        mo = mix_months[key]
+        mixes_by_month.append({
+            "key": key, "label": mo["label"], "mixes": mo["mixes"], "total_bottles": round(mo["total_bottles"], 2),
+            "fluids": [{"name": f["name"], "mixes": f["mixes"], "bottles": round(f["bottles"], 2), "liters": round(f["liters"], 2)}
+                       for f in sorted(mo["fluids"].values(), key=lambda x: -x["bottles"])[:5]],
+        })
+
     return {
         "totals": {
             "cases": total_cases,
@@ -1172,6 +1205,7 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
         "calc_breakdown": calc_breakdown,
         "recent_cases": recent_out,
         "factors": factors,
+        "mixes_by_month": mixes_by_month,
     }
 
 
@@ -1238,6 +1272,11 @@ async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_
         raise HTTPException(status_code=400, detail="El tamaño de botella debe estar entre 1 y 20000 mL")
     doc = {"name": name, "name_key": name.lower(), "index_pct": round(idx, 2), "bottle_ml": round(bottle_ml, 1),
            "brand": str(payload.get("brand") or "").strip()[:80], "updated_at": now_iso()}
+    if payload.get("stock_bottles") not in (None, ""):
+        try:
+            doc["stock_bottles"] = round(max(float(payload["stock_bottles"]), 0.0), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Existencia de botellas no válida")
     existing = await db.fluid_templates.find_one({"user_id": user["user_id"], "name_key": doc["name_key"]}, {"_id": 0})
     if existing:
         await db.fluid_templates.update_one({"item_id": existing["item_id"]}, {"$set": doc})
@@ -1247,6 +1286,33 @@ async def add_fluid(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_
         await db.fluid_templates.insert_one(dict(item))
     item.pop("_id", None)
     return {"item": item}
+
+
+@api_router.patch("/fluids/{item_id}/stock")
+async def update_fluid_stock(item_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    """Inventario: suma/resta botellas (delta) o fija la existencia (set)."""
+    f = await db.fluid_templates.find_one({"item_id": item_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not f:
+        raise HTTPException(status_code=404, detail="Fluido no encontrado")
+    try:
+        if payload.get("set") is not None:
+            stock = float(payload["set"])
+        else:
+            stock = float(f.get("stock_bottles") or 0) + float(payload.get("delta") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Cantidad de botellas no válida")
+    stock = round(min(max(stock, 0.0), 100000.0), 2)
+    if payload.get("set") is None:
+        # incremento atómico para no perder toques rápidos
+        upd = await db.fluid_templates.find_one_and_update(
+            {"item_id": item_id}, {"$inc": {"stock_bottles": float(payload.get("delta") or 0)}, "$set": {"updated_at": now_iso()}},
+            projection={"_id": 0}, return_document=True,
+        )
+        stock = max(round(float(upd.get("stock_bottles") or 0), 2), 0.0)
+        await db.fluid_templates.update_one({"item_id": item_id}, {"$set": {"stock_bottles": stock}})
+        return {"item": {**upd, "stock_bottles": stock}}
+    await db.fluid_templates.update_one({"item_id": item_id}, {"$set": {"stock_bottles": stock, "updated_at": now_iso()}})
+    return {"item": {**f, "stock_bottles": stock}}
 
 
 @api_router.delete("/fluids/{item_id}")
@@ -1915,6 +1981,23 @@ async def mix_sheet(case_id: str, user: Dict[str, Any] = Depends(get_current_use
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
+    sheet = c.get("case_sheet") or {}
+    sig_elems: List[Any] = []
+    sig_draw = signature_drawing(sheet.get("firma_tecnico"))
+    if sig_draw is not None:
+        sig_tbl = Table([
+            [sig_draw],
+            [Paragraph(esc(sheet.get("tecnico_responsable") or "Técnico responsable del servicio"), cell)],
+            [Paragraph(esc(f"Firma del técnico responsable - {(clean_signature(sheet.get('firma_tecnico')) or {}).get('signed_at', '')}"), sub)],
+        ], colWidths=[80 * mm], hAlign="LEFT")
+        sig_tbl.setStyle(TableStyle([
+            ("LINEBELOW", (0, 0), (0, 0), 0.6, ink),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        sig_elems = [Spacer(1, 14 * mm), sig_tbl]
+    else:
+        sig_elems = [Spacer(1, 18 * mm), Paragraph("______________________________", cell),
+                     Paragraph("Firma del técnico responsable", sub)]
     d.build([
         Paragraph("Hoja de mezcla", title),
         Paragraph(esc(f"{who}{' · Lote ' + lot if lot else ''} · Cálculo del {when}"), sub),
@@ -1922,13 +2005,58 @@ async def mix_sheet(case_id: str, user: Dict[str, Any] = Depends(get_current_use
         tbl,
         Spacer(1, 10),
         Paragraph(esc(f"V1 × C1 = Vtotal × C punto de inyección · Agua = Vtotal − V1 − co-inyectores"), sub),
+        *sig_elems,
     ])
     text = "\n".join(
         [f"*Hoja de mezcla* · {who}{' · Lote ' + lot if lot else ''}", r.get("instruction") or ""]
         + [f"• {a}: {b}" for a, b in rows]
     )
     safe = who.replace(" ", "_")[:40]
-    return {"filename": f"Mezcla_{safe}.pdf", "pdf_base64": base64.b64encode(buf.getvalue()).decode("utf-8"), "text": text}
+    return {"filename": f"Mezcla_{safe}.pdf", "pdf_base64": base64.b64encode(buf.getvalue()).decode("utf-8"), "text": text,
+            "confirmed": bool(calc.get("mix_confirmed")), "confirmed_at": calc.get("mix_confirmed_at")}
+
+
+@api_router.post("/cases/{case_id}/mix-confirm")
+async def confirm_mix(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Confirma la mezcla del último Cálculo de inyección: registra arterial y agua en la Bitácora
+    y descuenta del inventario la fracción exacta de botellas usadas."""
+    c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    calc = next((x for x in reversed(c.get("calculations") or []) if (x.get("results") or {}).get("v1_l") is not None), None)
+    if not calc:
+        raise HTTPException(status_code=404, detail="Guarda primero un Cálculo de inyección en este caso")
+    if calc.get("mix_confirmed"):
+        raise HTTPException(status_code=400, detail="Esta mezcla ya fue confirmada")
+    r = calc["results"]
+    ts = now_iso()
+    fluid_name = str(r.get("fluid_name") or "").strip()
+    art_label = f"Arterial {fluid_name + ' ' if fluid_name else ''}Index {float(r.get('fluid_index_pct') or 0):g}%"
+    entries = []
+    for product, qty in ((art_label, float(r.get("concentrate_ml") or 0)), ("Agua", float(r.get("water_ml") or 0))):
+        if qty > 0:
+            entries.append({"log_id": f"log_{uuid.uuid4().hex[:10]}", "product": product, "form": "liquid",
+                            "quantity": round(qty, 2), "unit": "ml", "source": "mix", "created_at": ts})
+    bottles = round(float(r.get("bottles") or 0), 2)
+    res = await db.cases.update_one(
+        {"case_id": case_id, "calculations": {"$elemMatch": {"calc_id": calc["calc_id"], "mix_confirmed": {"$ne": True}}}},
+        {"$push": {"logbook": {"$each": entries}},
+         "$set": {"calculations.$.mix_confirmed": True, "calculations.$.mix_confirmed_at": ts, "updated_at": ts}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Esta mezcla ya fue confirmada")
+    stock_left = None
+    fluid = None
+    if fluid_name:
+        fluid = await db.fluid_templates.find_one_and_update(
+            {"user_id": user["user_id"], "name_key": fluid_name.lower()},
+            {"$inc": {"stock_bottles": -bottles}, "$set": {"updated_at": ts}},
+            projection={"_id": 0}, return_document=True,
+        )
+    if fluid:
+        stock_left = max(round(float(fluid.get("stock_bottles") or 0), 2), 0.0)
+        await db.fluid_templates.update_one({"item_id": fluid["item_id"]}, {"$set": {"stock_bottles": stock_left}})
+    return {"entries": entries, "bottles": bottles, "fluid": fluid["name"] if fluid else None, "stock_left": stock_left}
 
 
 # ----------------------------- Case attachments (scanned documents) -----------------------------

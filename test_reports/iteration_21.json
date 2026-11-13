@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 21: tested fluid inventory, Confirmar mezcla (Bitácora + exact bottle deduction), the signature on the mix-sheet PDF and the Historial de mezclas, on the backend and on the frontend (390x844). Backend: 11/11 new tests pass (test_iter21_inventory_mixconfirm.py) and 46/46 regression tests pass (iter18/19/20 and signature). Frontend: every requested flow passes. Inventory: plus/minus change stock by 1 (10→11→10), Fijar '0,5' gives 0.5 and shows 'existencia baja', minus at 0.5 gives 0 (never below 0), and the add form saves TEST_UIAdd21 with 30%, 946 mL and 4 botellas. The ref-inventory card opens /library/inventory. Wizard case with the TEST_UIFluid21 template (10 bottles, 473 mL): V1 0.75 L, 1.59 bottles. Tapping mix-confirm returns 200, adds 2 Bitácora entries with source 'mix' (Arterial TEST_UIFluid21 Index 25% 751 mL and Agua 8542 mL), shows the toast '−1.59 botellas, quedan 8.41' and the mix-confirmed text, and the inventory then reads 8.41. A second confirm returns 400 'Esta mezcla ya fue confirmada' and leaves stock unchanged. Reopening the wizard prefills only TEST_Coinj21; the Arterial/Agua mix entries are excluded. The mix-sheet PDF is 1 page, includes the technician name and signature caption when firma_tecnico exists and a blank line plus caption otherwise, and returns the confirmed flag. Stats shows the stats-mixes section with card stats-mix-2026-11 'Nov 2026 · 1 mezcla · 1.59 botellas'. Regression: mix-whatsapp opens wa.me and mix-pdf downloads Mezcla_TEST_iter21_ui.pdf. No deprecated Expo packages and no SafeAreaView-from-react-native imports found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/cases/{id}/mix-confirm", "issue": "The confirm is check-then-act and not atomic: it reads mix_confirmed, deducts stock, then sets the flag. Two concurrent requests could both pass the check and deduct twice. 4 parallel calls did not reproduce it here (1x200, 3x400). Fix: put the condition in the update filter (calculations.$elemMatch {calc_id, mix_confirmed != true}) and deduct stock only if modified_count == 1."},
+      {"endpoint": "POST /api/cases/{id}/mix-confirm", "issue": "If a fluid template exists but has no stock_bottles (created before the inventory feature), confirming sets stock to 0 and the toast says 'quedan 0'. Consider skipping the deduction or warning when stock was never set."},
+      {"endpoint": "PATCH /api/fluids/{id}/stock", "issue": "The delta update is read-modify-write, not $inc, so rapid +/- taps can lose an update. Low impact."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Case Reporte / MixSheet", "issues": ["'Confirmar mezcla' is irreversible but has no confirmation dialog or undo. Deleting the mix Bitácora entries does not restore stock or clear the confirmed flag. Consider an Alert confirm step."]},
+      {"screen": "Inventario de fluidos", "issues": ["Fluids cannot be deleted from the inventory screen (only from the wizard's manage templates). Minor."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_inventory_mixconfirm.py",
+    "/app/backend/tests/race_mix_confirm.py",
+    "/app/backend/tests/ui_setup_iter21.py",
+    "/app/test_reports/pytest/iter21.xml"
+  ],
+  "action_items": [
+    "Optional: make mix-confirm atomic (conditional update on mix_confirmed != true before deducting stock).",
+    "Optional: use $inc for the stock delta in PATCH /fluids/{id}/stock.",
+    "Optional: add a confirmation Alert before 'Confirmar mezcla'; handle templates without stock_bottles (don't report 'quedan 0')."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2260 lines and case/[id].tsx is 1184 lines; both are over the 700-line guideline and should be split into modules.",
+    "Stats mixes_by_month is derived from case calculations, so deleting a case also erases its mix history (stock is not restored). Acceptable, but worth documenting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_inventory_mixconfirm.py",
+    "/app/backend/tests/race_mix_confirm.py",
+    "/app/backend/tests/ui_setup_iter21.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created TEST_ fluids and cases, then deleted all of them by id (GET /api/fluids now returns an empty list, so there were no pre-existing user fluids). No user or seed data was modified.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend env var is EXPO_PUBLIC_BACKEND_URL. The server date is Nov 2026, so the mix month key is 2026-11. The wizard needs a sheet condition (e.g. diabetes_vascular) for Vtotal. Step 3: tap the fluid-{item_id} chip and fill wiz-c2. ui_setup_iter21.py creates the UI test fluid and case and cleans them up with 'cleanup <case_id> <fluid_id>'. The wizard also saves a separate 'Masa magra corporal' calc, so a case shows 2 calcs.",
+  "rca_of_issue": ""
+}

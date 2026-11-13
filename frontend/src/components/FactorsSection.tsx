@@ -45,6 +45,38 @@ export function FactorsSection({ f }: Props) {
   );
 }
 
+export type MixMonth = {
+  key: string;
+  label: string;
+  mixes: number;
+  total_bottles: number;
+  fluids: { name: string; mixes: number; bottles: number; liters: number }[];
+};
+
+/** Historial de mezclas confirmadas: arteriales y botellas más usados por mes. */
+export function MixHistory({ months }: { months: MixMonth[] }) {
+  return (
+    <View testID="stats-mixes">
+      <Text style={styles.sectionLabel}>Historial de mezclas</Text>
+      {months.length === 0 ? (
+        <View style={styles.list}>
+          <Text style={styles.empty}>Aún no hay mezclas confirmadas. Usa “Confirmar mezcla” en el Reporte del caso.</Text>
+        </View>
+      ) : (
+        months.map((m) => (
+          <List
+            key={m.key}
+            testID={`stats-mix-${m.key}`}
+            title={`${m.label} · ${m.mixes} mezcla${m.mixes === 1 ? "" : "s"} · ${m.total_bottles} botellas`}
+            rows={m.fluids.map((f) => ({ label: f.name, value: `${f.bottles} bot · ${f.liters} L` }))}
+            empty=""
+          />
+        ))
+      )}
+    </View>
+  );
+}
+
 function List({ title, rows, empty, testID }: { title: string; rows: { label: string; value: string }[]; empty: string; testID: string }) {
   return (
     <View testID={testID} style={styles.list}>

@@ -34,7 +34,7 @@ import { ReportShare } from "@/src/components/ReportShare";
 import { MixSheet } from "@/src/components/MixSheet";
 import { useOfflineRefresh } from "@/src/offline/useOfflineRefresh";
 
-type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; created_at: string };
+type Calc = { calc_id: string; label: string; summary: string; inputs: Record<string, any>; results?: Record<string, any>; mix_confirmed?: boolean; created_at: string };
 type Note = { note_id: string; text: string; date: string; photos: string[]; created_at: string };
 type Attachment = { att_id: string; label: string; filename: string; size: number; created_at: string; kind?: string };
 type LogEntry = { log_id: string; product: string; form: string; quantity: number; unit: string; created_at: string };
@@ -735,7 +735,12 @@ export default function CaseDetail() {
               style={{ marginTop: spacing.md, alignSelf: "stretch" }}
             />
             <ReportShare caseId={String(id)} />
-            <MixSheet caseId={String(id)} />
+            <MixSheet
+              caseId={String(id)}
+              hasMix={data.calculations.some((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)}
+              confirmed={!!([...data.calculations].reverse().find((c) => c.results?.v1_l !== undefined && c.results?.v1_l !== null)?.mix_confirmed)}
+              onConfirmed={load}
+            />
           </View>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>

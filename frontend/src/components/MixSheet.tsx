@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
@@ -10,10 +10,50 @@ import { colors, font, fontSize, spacing } from "@/src/theme";
 
 type Sheet = { filename: string; pdf_base64: string; text: string };
 
-/** Hoja de mezcla del último Cálculo de inyección: PDF de una página o texto corto por WhatsApp. */
-export function MixSheet({ caseId }: { caseId: string }) {
+/** Hoja de mezcla del último Cálculo de inyección: PDF de una página, texto por WhatsApp y confirmación. */
+export function MixSheet({
+  caseId,
+  hasMix,
+  confirmed,
+  onConfirmed,
+}: {
+  caseId: string;
+  hasMix: boolean;
+  confirmed: boolean;
+  onConfirmed: () => void;
+}) {
   const toast = useToast();
-  const [busy, setBusy] = useState<"pdf" | "text" | null>(null);
+  const [busy, setBusy] = useState<"pdf" | "text" | "confirm" | null>(null);
+
+  const confirm = () => {
+    const msg = "Se registrarán el arterial y el agua en la Bitácora y se descontarán las botellas del inventario. No se puede deshacer.";
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) doConfirm();
+      return;
+    }
+    Alert.alert("Confirmar mezcla", msg, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Confirmar", onPress: doConfirm },
+    ]);
+  };
+
+  const doConfirm = async () => {
+    setBusy("confirm");
+    try {
+      const r = await api.post<{ bottles: number; fluid: string | null; stock_left: number | null }>(`/cases/${caseId}/mix-confirm`, {});
+      toast.show(
+        r.fluid
+          ? `Mezcla registrada en la Bitácora. ${r.fluid}: −${r.bottles} botellas, quedan ${r.stock_left}`
+          : "Mezcla registrada en la Bitácora (el arterial no está en tu inventario)",
+        "success",
+      );
+      onConfirmed();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const load = () => api.get<Sheet>(`/cases/${caseId}/mix-sheet`);
   const fail = (e: any) =>
@@ -60,6 +100,15 @@ export function MixSheet({ caseId }: { caseId: string }) {
         <Button testID="mix-pdf" label="PDF" icon="print-outline" variant="outline" onPress={sharePdf} loading={busy === "pdf"} disabled={!!busy} style={{ flex: 1 }} />
         <Button testID="mix-whatsapp" label="WhatsApp" icon="logo-whatsapp" variant="outline" onPress={sendText} loading={busy === "text"} disabled={!!busy} style={{ flex: 1 }} />
       </View>
+      {hasMix && (
+        <View style={{ marginTop: spacing.sm }}>
+          {confirmed ? (
+            <Text testID="mix-confirmed" style={styles.done}>✓ Mezcla confirmada: registrada en la Bitácora y descontada del inventario</Text>
+          ) : (
+            <Button testID="mix-confirm" label="Confirmar mezcla" icon="checkmark-done-outline" onPress={confirm} loading={busy === "confirm"} disabled={!!busy} />
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -69,4 +118,5 @@ const styles = StyleSheet.create({
   title: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.base },
   sub: { color: colors.onSurfaceTertiary, fontFamily: font.regular, fontSize: fontSize.sm, marginTop: 2, marginBottom: spacing.md },
   row: { flexDirection: "row", gap: spacing.sm },
+  done: { color: colors.success, fontFamily: font.medium, fontSize: fontSize.sm },
 });
