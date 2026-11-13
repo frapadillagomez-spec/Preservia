@@ -45,6 +45,49 @@ export function FactorsSection({ f }: Props) {
   );
 }
 
+export type CostStats = {
+  avg_cost_per_case: number | null;
+  cases_costed: number;
+  avg_service_price: number | null;
+  months: { key: string; label: string; used: number; purchased: number; service: number; cases_costed: number; avg_per_case: number | null }[];
+};
+
+const money = (v: number | null | undefined) =>
+  v === null || v === undefined ? "—" : `$${v.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Gasto mensual en fluidos (usado en casos vs. compras) y costo promedio por caso. */
+export function CostsSection({ c }: { c: CostStats }) {
+  return (
+    <View testID="stats-costs">
+      <Text style={styles.sectionLabel}>Costos de fluidos (MXN)</Text>
+      <View style={styles.row}>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Costo promedio por caso</Text>
+          <Text testID="stats-avg-cost" style={[styles.cardNum, { fontSize: fontSize.lg }]}>{money(c.avg_cost_per_case)}</Text>
+          <Text style={styles.cardSub}>{c.cases_costed} caso{c.cases_costed === 1 ? "" : "s"} con costo</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Precio promedio del servicio</Text>
+          <Text testID="stats-avg-service" style={[styles.cardNum, { fontSize: fontSize.lg }]}>{money(c.avg_service_price)}</Text>
+        </View>
+      </View>
+      {c.months.map((m) => (
+        <List
+          key={m.key}
+          testID={`stats-cost-${m.key}`}
+          title={m.label}
+          rows={[
+            { label: "Usado en casos", value: money(m.used) },
+            { label: "Comprado", value: money(m.purchased) },
+            { label: "Promedio por caso", value: money(m.avg_per_case) },
+          ]}
+          empty=""
+        />
+      ))}
+    </View>
+  );
+}
+
 export type MixMonth = {
   key: string;
   label: string;

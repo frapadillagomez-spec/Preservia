@@ -784,6 +784,8 @@ async def import_case(payload: Dict[str, Any], user: Dict[str, Any] = Depends(ge
         "embalming_end": src.get("embalming_end"),
         "case_sheet": src.get("case_sheet") if isinstance(src.get("case_sheet"), dict) else None,
         "logbook": [e for e in (src.get("logbook") or []) if isinstance(e, dict)][:500],
+        **({"service_price": round(float(src["service_price"]), 2)}
+           if isinstance(src.get("service_price"), (int, float)) and src["service_price"] >= 0 else {}),
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
@@ -1192,6 +1194,50 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
                        for f in sorted(mo["fluids"].values(), key=lambda x: -x["bottles"])[:5]],
         })
 
+    # ---- Costos: gasto usado en casos vs. compras, por mes; costo promedio por caso ----
+    fluids_map = {f["name_key"]: f for f in await db.fluid_templates.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)}
+    price_list = await db.product_prices.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)
+    purchases = await db.fluid_purchases.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(5000)
+    cmonths: Dict[str, Dict[str, Any]] = {}
+
+    def _cm(dt: datetime) -> Dict[str, Any]:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.astimezone(MX_TZ)
+        key = f"{dt.year}-{dt.month:02d}"
+        return cmonths.setdefault(key, {"key": key, "label": f"{month_labels[dt.month - 1]} {dt.year}",
+                                        "used": 0.0, "purchased": 0.0, "cases_costed": 0, "service": 0.0})
+    costed_total, costed_n, service_total, service_n = 0.0, 0, 0.0, 0
+    for c in cases:
+        cc = _case_cost(c, fluids_map, price_list)
+        dt = _parse_dt(c.get("created_at")) or _parse_dt(c.get("date"))
+        if cc["total"] > 0:
+            costed_total += cc["total"]
+            costed_n += 1
+            if dt:
+                mo = _cm(dt)
+                mo["used"] += cc["total"]
+                mo["cases_costed"] += 1
+        if c.get("service_price") is not None:
+            service_total += float(c["service_price"])
+            service_n += 1
+            if dt:
+                _cm(dt)["service"] += float(c["service_price"])
+    for p in purchases:
+        dt = _parse_dt(p.get("date"))
+        if dt:
+            _cm(dt)["purchased"] += float(p.get("total") or 0)
+    costs = {
+        "avg_cost_per_case": round(costed_total / costed_n, 2) if costed_n else None,
+        "cases_costed": costed_n,
+        "avg_service_price": round(service_total / service_n, 2) if service_n else None,
+        "months": [
+            {**m, "used": round(m["used"], 2), "purchased": round(m["purchased"], 2), "service": round(m["service"], 2),
+             "avg_per_case": round(m["used"] / m["cases_costed"], 2) if m["cases_costed"] else None}
+            for m in (cmonths[k] for k in sorted(cmonths.keys(), reverse=True)[:6])
+        ],
+    }
+
     return {
         "totals": {
             "cases": total_cases,
@@ -1206,6 +1252,7 @@ async def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
         "recent_cases": recent_out,
         "factors": factors,
         "mixes_by_month": mixes_by_month,
+        "costs": costs,
     }
 
 
@@ -1653,6 +1700,8 @@ def build_pdf(case: Dict[str, Any], notes: List[Dict[str, Any]], user: Dict[str,
         [Paragraph("Termino de embalsamamiento", cell_label), Paragraph(esc(fmt_date(case.get("embalming_end"))), cell_val)],
         [Paragraph("Tiempo consumido", cell_label), Paragraph(esc(dur or "-"), cell_val)],
         [Paragraph("Profesional", cell_label), Paragraph(esc(f"{user.get('name','')} ({user.get('email','')})"), cell_val)],
+        *([[Paragraph("Precio del servicio", cell_label),
+            Paragraph(esc(f"${float(case['service_price']):,.2f} MXN"), cell_val)]] if case.get("service_price") is not None else []),
         [Paragraph("Generado", cell_label), Paragraph(esc(fmt_date(now_iso())), cell_val)],
     ]
     t = Table(info_rows, colWidths=[45 * mm, 120 * mm])
@@ -2187,12 +2236,102 @@ def _to_unit(qty: float, unit: str, target: str) -> Optional[float]:
 
 @api_router.get("/cases/{case_id}/cost")
 async def case_cost(case_id: str, user: Dict[str, Any] = Depends(get_current_user)):
-    """Costo en fluidos (MXN): arterial de mezclas confirmadas + co-inyectores, cavidades y otros de la Bitácora."""
+    """Costo en fluidos (MXN) + precio del servicio y margen."""
     c = await db.cases.find_one({"case_id": case_id, "user_id": user["user_id"]}, {"_id": 0})
     if not c:
         raise HTTPException(status_code=404, detail="Caso no encontrado")
     fluids = {f["name_key"]: f for f in await db.fluid_templates.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)}
     prices = await db.product_prices.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(500)
+    out = _case_cost(c, fluids, prices)
+    sp = c.get("service_price")
+    if sp is not None:
+        out["service_price"] = sp
+        out["margin"] = round(float(sp) - out["total"], 2)
+        out["margin_pct"] = round(out["margin"] / float(sp) * 100, 1) if float(sp) > 0 else None
+    return out
+
+
+@api_router.put("/cases/{case_id}/service-price")
+async def set_service_price(case_id: str, payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    """Precio al que se cobra el servicio (MXN). null/'' lo borra."""
+    raw = payload.get("price")
+    if isinstance(raw, bool):
+        raise HTTPException(status_code=400, detail="Precio no válido")
+    if raw in (None, ""):
+        upd: Dict[str, Any] = {"$unset": {"service_price": ""}, "$set": {"updated_at": now_iso()}}
+    else:
+        try:
+            price = float(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Precio no válido")
+        if not (0 <= price <= 100000000):
+            raise HTTPException(status_code=400, detail="Precio no válido")
+        upd = {"$set": {"service_price": round(price, 2), "updated_at": now_iso()}}
+    res = await db.cases.update_one({"case_id": case_id, "user_id": user["user_id"]}, upd)
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    return {"ok": True}
+
+
+# ---------- Historial de compras de fluidos ----------
+@api_router.get("/purchases")
+async def list_purchases(user: Dict[str, Any] = Depends(get_current_user)):
+    items = await db.fluid_purchases.find({"user_id": user["user_id"]}, {"_id": 0, "user_id": 0}).sort("date", -1).to_list(500)
+    return {"items": items}
+
+
+@api_router.post("/purchases")
+async def add_purchase(payload: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)):
+    """Registra una compra: suma botellas al inventario y actualiza el precio por botella."""
+    f = await db.fluid_templates.find_one({"item_id": payload.get("fluid_id"), "user_id": user["user_id"]}, {"_id": 0})
+    if not f:
+        raise HTTPException(status_code=404, detail="Fluido no encontrado")
+    try:
+        bottles = float(payload.get("bottles") or 0)
+        total = float(payload.get("total") or 0)
+    except (TypeError, ValueError):
+        bottles, total = 0, -1
+    if not (0 < bottles <= 10000) or not (0 <= total <= 100000000):
+        raise HTTPException(status_code=400, detail="Escribe botellas (mayor que 0) y el total pagado")
+    date = str(payload.get("date") or now_iso())[:40]
+    if not _parse_dt(date):
+        raise HTTPException(status_code=400, detail="Fecha no válida")
+    unit_price = round(total / bottles, 2)
+    doc = {"purchase_id": f"pur_{uuid.uuid4().hex[:12]}", "user_id": user["user_id"], "fluid_id": f["item_id"],
+           "fluid_name": f["name"], "bottles": round(bottles, 2), "total": round(total, 2), "unit_price": unit_price,
+           "supplier": str(payload.get("supplier") or "").strip()[:80], "date": date, "created_at": now_iso()}
+    await db.fluid_purchases.insert_one(dict(doc))
+    upd = await db.fluid_templates.find_one_and_update(
+        {"item_id": f["item_id"]},
+        {"$inc": {"stock_bottles": round(bottles, 2)}, "$set": {"price_per_bottle": unit_price, "updated_at": now_iso()}},
+        projection={"_id": 0}, return_document=True,
+    )
+    stock = round(float(upd.get("stock_bottles") or 0), 2)
+    await db.fluid_templates.update_one({"item_id": f["item_id"]}, {"$set": {"stock_bottles": stock}})
+    doc.pop("_id", None)
+    doc.pop("user_id", None)
+    return {"purchase": doc, "stock": stock, "price_per_bottle": unit_price}
+
+
+@api_router.delete("/purchases/{purchase_id}")
+async def delete_purchase(purchase_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Elimina una compra y resta sus botellas del inventario (sin bajar de 0)."""
+    p = await db.fluid_purchases.find_one_and_delete({"purchase_id": purchase_id, "user_id": user["user_id"]})
+    if not p:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    upd = await db.fluid_templates.find_one_and_update(
+        {"item_id": p["fluid_id"], "user_id": user["user_id"]},
+        {"$inc": {"stock_bottles": -float(p.get("bottles") or 0)}}, projection={"_id": 0}, return_document=True,
+    )
+    stock = None
+    if upd:
+        stock = max(round(float(upd.get("stock_bottles") or 0), 2), 0.0)
+        await db.fluid_templates.update_one({"item_id": p["fluid_id"]}, {"$set": {"stock_bottles": stock}})
+    return {"ok": True, "stock": stock}
+
+
+def _case_cost(c: Dict[str, Any], fluids: Dict[str, Any], prices: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Costo en fluidos (MXN): arterial de mezclas confirmadas + co-inyectores, cavidades y otros de la Bitácora."""
     by_key = {p["name_key"]: p for p in prices}
     groups: Dict[str, Dict[str, Any]] = {k: {"key": k, "label": "Arterial" if k == "arterial" else PRICE_CATS[k], "total": 0.0, "items": []}
                                          for k in ["arterial", "coinyector", "cavidad", "otro"]}

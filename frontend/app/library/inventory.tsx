@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import { router } from "expo-router";
@@ -11,8 +11,10 @@ import { isLow, minStock, StockFluid } from "@/src/components/LowStockBanner";
 import { useToast } from "@/src/components/Toast";
 import { Button, Field } from "@/src/components/ui";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
+import { fmtDateMx } from "@/src/utils/mxtime";
 
 type Fluid = StockFluid;
+type Purchase = { purchase_id: string; fluid_name: string; bottles: number; total: number; unit_price: number; supplier?: string; date: string };
 
 const n = (s: string) => parseFloat((s || "").replace(",", "."));
 
@@ -29,6 +31,60 @@ export default function Inventory() {
   const [openCfg, setOpenCfg] = useState<string | null>(null);
   const [shopping, setShopping] = useState(false);
   const [order, setOrder] = useState<Record<string, string>>({});
+  const [buyFor, setBuyFor] = useState<string | null>(null);
+  const [buy, setBuy] = useState({ bottles: "", total: "", supplier: "" });
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+
+  const loadPurchases = useCallback(() => {
+    api.get<{ items: Purchase[] }>("/purchases").then((r) => setPurchases(r.items || [])).catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadPurchases();
+  }, [loadPurchases]);
+
+  const savePurchase = async (f: Fluid) => {
+    if (!(n(buy.bottles) > 0) || !(n(buy.total) >= 0)) {
+      showToast("Escribe botellas y total pagado", "error");
+      return;
+    }
+    try {
+      const r = await api.post<{ stock: number; price_per_bottle: number }>("/purchases", {
+        fluid_id: f.item_id,
+        bottles: n(buy.bottles),
+        total: n(buy.total),
+        supplier: buy.supplier.trim(),
+      });
+      setItems((list) => (list || []).map((x) => (x.item_id === f.item_id ? { ...x, stock_bottles: r.stock, price_per_bottle: r.price_per_bottle } : x)));
+      setBuy({ bottles: "", total: "", supplier: "" });
+      setBuyFor(null);
+      loadPurchases();
+      showToast(`Compra registrada: ahora ${r.stock} botellas a ${mxn(r.price_per_bottle)} c/u`, "success");
+    } catch (e: any) {
+      showToast(e?.detail || "No se pudo registrar (requiere conexión)", "error");
+    }
+  };
+
+  const removePurchase = (p: Purchase) => {
+    const msg = `¿Eliminar la compra de ${p.bottles} botellas de ${p.fluid_name}? Se restarán del inventario.`;
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) doRemovePurchase(p);
+      return;
+    }
+    Alert.alert("Eliminar compra", msg, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Eliminar", style: "destructive", onPress: () => doRemovePurchase(p) },
+    ]);
+  };
+
+  const doRemovePurchase = async (p: Purchase) => {
+    try {
+      await api.del(`/purchases/${p.purchase_id}`);
+      loadPurchases();
+      load();
+    } catch (e: any) {
+      showToast(e?.detail || "No se pudo eliminar", "error");
+    }
+  };
 
   const saveCfg = async (f: Fluid) => {
     const c = cfg[f.item_id] || { min: "", price: "" };
@@ -191,10 +247,50 @@ export default function Inventory() {
                     <Button testID={`inv-cfg-save-${f.item_id}`} label="Guardar ajustes" onPress={() => saveCfg(f)} style={{ marginTop: spacing.sm }} />
                   </View>
                 ) : (
-                  <Pressable testID={`inv-cfg-${f.item_id}`} onPress={() => setOpenCfg(f.item_id)} style={styles.cfgLink}>
-                    <Ionicons name="settings-outline" size={16} color={colors.onSurface} />
-                    <Text style={styles.cfgText}>Mínimo y precio</Text>
-                  </Pressable>
+                  <View style={{ flexDirection: "row", gap: spacing.lg }}>
+                    <Pressable testID={`inv-cfg-${f.item_id}`} onPress={() => setOpenCfg(f.item_id)} style={styles.cfgLink}>
+                      <Ionicons name="settings-outline" size={16} color={colors.onSurface} />
+                      <Text style={styles.cfgText}>Mínimo y precio</Text>
+                    </Pressable>
+                    <Pressable testID={`inv-buy-${f.item_id}`} onPress={() => { setBuy({ bottles: "", total: "", supplier: "" }); setBuyFor(buyFor === f.item_id ? null : f.item_id); }} style={styles.cfgLink}>
+                      <Ionicons name="bag-add-outline" size={16} color={colors.onSurface} />
+                      <Text style={styles.cfgText}>Registrar compra</Text>
+                    </Pressable>
+                  </View>
+                )}
+                {buyFor === f.item_id && (
+                  <View style={styles.cfgBox}>
+                    <View style={styles.setRow}>
+                      <TextInput
+                        testID={`buy-bottles-${f.item_id}`}
+                        value={buy.bottles}
+                        onChangeText={(t) => setBuy({ ...buy, bottles: t })}
+                        placeholder="Botellas"
+                        placeholderTextColor={colors.onSurfaceTertiary}
+                        keyboardType="decimal-pad"
+                        style={styles.input}
+                      />
+                      <TextInput
+                        testID={`buy-total-${f.item_id}`}
+                        value={buy.total}
+                        onChangeText={(t) => setBuy({ ...buy, total: t })}
+                        placeholder="Total pagado MXN"
+                        placeholderTextColor={colors.onSurfaceTertiary}
+                        keyboardType="decimal-pad"
+                        style={styles.input}
+                      />
+                    </View>
+                    <TextInput
+                      testID={`buy-supplier-${f.item_id}`}
+                      value={buy.supplier}
+                      onChangeText={(t) => setBuy({ ...buy, supplier: t })}
+                      placeholder="Proveedor (opcional)"
+                      placeholderTextColor={colors.onSurfaceTertiary}
+                      style={[styles.input, { marginTop: spacing.sm }]}
+                    />
+                    <Text style={styles.sub}>Suma las botellas al inventario y actualiza el precio por botella.</Text>
+                    <Button testID={`buy-save-${f.item_id}`} label="Guardar compra" icon="checkmark" onPress={() => savePurchase(f)} style={{ marginTop: spacing.sm }} />
+                  </View>
                 )}
               </View>
             );
@@ -251,6 +347,26 @@ export default function Inventory() {
           </View>
         )}
 
+        {purchases.length > 0 && (
+          <View testID="inv-purchases" style={styles.addBox}>
+            <Text style={styles.name}>Historial de compras</Text>
+            {purchases.slice(0, 30).map((p) => (
+              <View key={p.purchase_id} testID={`purchase-${p.purchase_id}`} style={styles.orderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.orderName}>{p.fluid_name} · {p.bottles} bot.</Text>
+                  <Text style={styles.sub}>
+                    {fmtDateMx(p.date)} · {mxn(p.total)} ({mxn(p.unit_price)} c/u){p.supplier ? ` · ${p.supplier}` : ""}
+                  </Text>
+                </View>
+                <Pressable testID={`purchase-del-${p.purchase_id}`} onPress={() => removePurchase(p)} hitSlop={10} style={styles.round}>
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                </Pressable>
+              </View>
+            ))}
+            <Text style={styles.sub}>Eliminar una compra resta sus botellas del inventario.</Text>
+          </View>
+        )}
+
         <Button
           testID="inv-prices"
           label="Precios de co-inyectores y cavidades"
@@ -291,6 +407,7 @@ const styles = StyleSheet.create({
   setRow: { flexDirection: "row", gap: spacing.sm, width: "100%" },
   input: {
     flex: 1,
+    minWidth: 0,
     minHeight: 44,
     borderWidth: 1,
     borderColor: colors.border,

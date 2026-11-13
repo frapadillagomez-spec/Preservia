@@ -17,7 +17,7 @@ import { api } from "@/src/api";
 import { colors, font, fontSize, radius, spacing } from "@/src/theme";
 import { fmtDateMx } from "@/src/utils/mxtime";
 import { BrandBar } from "@/src/components/BrandLogo";
-import { FactorsSection, MixHistory, MixMonth } from "@/src/components/FactorsSection";
+import { CostsSection, CostStats, FactorsSection, MixHistory, MixMonth } from "@/src/components/FactorsSection";
 
 type Totals = {
   cases: number;
@@ -45,6 +45,7 @@ type Stats = {
   recent_cases: RecentCase[];
   factors?: FactorStats;
   mixes_by_month?: MixMonth[];
+  costs?: CostStats;
 };
 type FactorStats = {
   k_avg: number | null;
@@ -212,6 +213,7 @@ export default function StatsScreen() {
 
         {stats.factors && <FactorsSection f={stats.factors} />}
         {stats.mixes_by_month && <MixHistory months={stats.mixes_by_month} />}
+        {stats.costs && <CostsSection c={stats.costs} />}
 
         {/* Recent activity */}
         <Text style={styles.sectionLabel}>Actividad reciente</Text>

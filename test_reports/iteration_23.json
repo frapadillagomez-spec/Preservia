@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 23 checked service price + margin, the PDF price row, the purchase history (stock and price_per_bottle), stats costs, and re-ran the iter22 regression suite. Backend: 12 of 12 new pytest tests pass (1 skipped in the first run because the test called the wrong endpoint; after fixing the test it passes), and 9 of 9 iter22 regression tests pass. The PDF shows the 'Precio del servicio' row ($12,345.50 MXN) only when a price is set, with no cost breakdown. UI (375x667): the case Reporte tab saves the price and shows the margin and % (6500 -> $5,798.00 · 89.2%); negative margin shows in red; invalid input shows an error; clearing removes the margin. In Inventario, registering a purchase updates stock (3.62 -> 9.62) and price ($400 -> $450), and history shows date, total, unit price and supplier; deleting it puts stock back to 3.62. The Stats tab shows stats-costs, stats-avg-cost, stats-avg-service and month cards stats-cost-2026-11/09/08. The main problem is a layout overflow with TextInputs side by side in a row on web. No deprecated packages detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "DELETE /api/purchases/{id}", "issue": "Deleting a purchase puts the stock back but leaves price_per_bottle at the deleted purchase's unit price (e.g. stays $450 after deleting). This may be intended; check that it is."},
+      {"endpoint": "DELETE /api/fluids/{id}", "issue": "Deleting a fluid leaves its purchases in fluid_purchases. They still show in history and stats 'purchased', and deleting them later returns stock null."},
+      {"endpoint": "GET /api/stats costs.months", "issue": "'used' fluid cost is grouped by the case's created_at, not by mix_confirmed_at or logbook date. A case opened in one month and embalmed in the next lands in the wrong month."},
+      {"endpoint": "PUT /api/cases/{id}/service-price", "issue": "{price: true} is accepted as 1.0 because float(True) works. Minor validation gap."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Inventory purchase form (two inputs in one setRow)", "issue": "On web, buy-total-{id} overflows the card: the bottles box spans x=29-250 and the total box x=258-479, while the card ends at x=359, so ~120px of the 'Total pagado' field is clipped. Cause: a web TextInput has an intrinsic min width and flex:1 does not shrink it. Fix: add minWidth: 0 (or flexBasis: 0) to styles.input. The same pattern is likely in the inv-min/inv-price config row.", "testID": "buy-total-{id}", "priority": "MEDIUM"},
+      {"component": "CaseCost service price row", "issue": "The service-price-save button sticks out past the card's right padding. The button spans x=283-371, while the card content ends at ~x=321 and the card border at ~x=333. Same TextInput min-width cause: add minWidth: 0 to styles.input in CaseCost.tsx.", "testID": "service-price-save", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Case Reporte - CaseCost", "issues": ["Negative margin is shown as '$-602.00' instead of '-$602.00' because mxn() formats the sign after '$'.", "The 'Escribe un precio válido' error shows at the top of the card under the total, far from the input, and also replaces any earlier load error.", "The margin row wraps to 2 lines on mobile because the label and the value plus % compete for width.", "Input like '12abc' is silently saved as 12 because parseFloat allows trailing text."]},
+      {"screen": "Inventario - Historial de compras", "issues": ["purchase-del-* deletes immediately with no confirmation, which can accidentally change stock.", "The buy form state is shared across fluids: values typed for one fluid carry over when you open the form for another."]},
+      {"screen": "Stats - stats-costs", "issues": ["The backend returns months[].service, but the month cards do not show service income or margin. Optional."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_iter23_service_price_purchases.py", "/app/backend/tests/ui_setup_iter23.py", "/app/test_reports/pytest/pytest_iter23.xml"],
+  "action_items": [
+    "Add minWidth: 0 to the TextInput style in inventory.tsx (styles.input) and CaseCost.tsx (styles.input) so inputs in a flex row shrink on web. Today buy-total overflows the card by ~120px and service-price-save sticks out past the card padding.",
+    "Format negative MXN amounts as '-$602.00' in mxn().",
+    "Optional: ask for confirmation before deleting a purchase; reset the buy form when switching fluids; clean up or keep purchases when a fluid is deleted; group stats 'used' by mix confirmation date."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2586 lines; split it into routers (cases, fluids/purchases, stats, pdf).",
+    "Purchase/delete/stock endpoints accept raw Dict payloads instead of Pydantic models; validation is done by hand.",
+    "add_purchase inserts the purchase and then updates the fluid in a separate call. If the second write fails, the history and stock get out of sync (no transaction)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter23_service_price_purchases.py", "/app/backend/tests/ui_setup_iter23.py"],
+  "success_rate": {"backend": "100% (21/21 incl. iter22 regression)", "frontend": "~90% (all flows work; 2 layout overflow bugs)"},
+  "seed_data_creation": "TEST_Fl23_*, TEST_UIFluid23, TEST_UICoinj23, cases TEST_iter23_* and purchases were created and then deleted by id. Verified that no TEST_ fluids, prices, iter23 cases or purchases remain.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend env var is EXPO_PUBLIC_BACKEND_URL. GET /cases/{id}/report returns JSON {pdf_base64}; decode it and read with pypdf. ui_setup_iter23.py creates a fluid (stock 5, price 400), a coinj price, and a case with a confirmed mix (stock becomes 3.62). Clean up with 'cleanup <case> <fluid> <price>', and delete purchases first. Skip the Welcome carousel by tapping 'Saltar'; there is no PIN prompt. To set stock, use PATCH /fluids/{id}/stock {set}."
+}

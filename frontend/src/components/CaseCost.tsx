@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 
 import { api } from "@/src/api";
@@ -10,25 +10,56 @@ type Cost = {
   total: number;
   groups: { key: string; label: string; total: number; items: { label: string; cost: number }[] }[];
   missing: string[];
+  service_price?: number;
+  margin?: number;
+  margin_pct?: number | null;
 };
 
-export const mxn = (n: number) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const mxn = (n: number) =>
+  `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Costo en fluidos del caso (MXN): arterial, co-inyectores, cavidades y otros. */
 export function CaseCost({ caseId, refreshKey }: { caseId: string; refreshKey?: string }) {
   const [data, setData] = useState<Cost | null>(null);
   const [err, setErr] = useState("");
+  const [price, setPrice] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const fetchCost = useCallback(() => {
+    setErr("");
+    api
+      .get<Cost>(`/cases/${caseId}/cost`)
+      .then((d) => {
+        setData(d);
+        setPrice(d.service_price !== undefined ? String(d.service_price) : "");
+      })
+      .catch((e: any) => setErr(e?.status === 0 ? "Sin conexión: el costo necesita internet" : e?.detail || "No se pudo calcular el costo"));
+  }, [caseId]);
+
+  const savePrice = async () => {
+    const t = price.trim().replace(",", ".");
+    const v = t === "" ? null : Number(t);
+    if (v !== null && !(v >= 0)) {
+      setErr("Escribe un precio válido");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.put(`/cases/${caseId}/service-price`, { price: v });
+      fetchCost();
+    } catch (e: any) {
+      setErr(e?.status === 0 ? "Sin conexión: guarda el precio con internet" : e?.detail || "No se pudo guardar el precio");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
-      setErr("");
-      api
-        .get<Cost>(`/cases/${caseId}/cost`)
-        .then(setData)
-        .catch((e: any) => setErr(e?.status === 0 ? "Sin conexión: el costo necesita internet" : e?.detail || "No se pudo calcular el costo"));
+      fetchCost();
       // refreshKey vuelve a calcular tras confirmar/anular una mezcla
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [caseId, refreshKey]),
+    }, [fetchCost, refreshKey]),
   );
 
   return (
@@ -61,6 +92,35 @@ export function CaseCost({ caseId, refreshKey }: { caseId: string; refreshKey?: 
           Sin precio: {data.missing.join(", ")}
         </Text>
       )}
+      {data && (
+        <View style={styles.group}>
+          <Text style={styles.groupLabel}>Precio del servicio (MXN)</Text>
+          <View style={styles.priceRow}>
+            <TextInput
+              testID="service-price-input"
+              value={price}
+              onChangeText={setPrice}
+              placeholder="Ej. 6500"
+              placeholderTextColor={colors.onSurfaceTertiary}
+              keyboardType="decimal-pad"
+              style={styles.input}
+            />
+            <Pressable testID="service-price-save" onPress={savePrice} disabled={saving} style={styles.saveBtn}>
+              {saving ? <ActivityIndicator color={colors.onSurfaceInverse} /> : <Text style={styles.saveText}>Guardar</Text>}
+            </Pressable>
+          </View>
+          {data.service_price !== undefined && (
+            <View testID="case-margin" style={styles.row}>
+              <Text style={styles.groupLabel}>Margen (servicio − fluidos)</Text>
+              <Text style={[styles.groupTotal, (data.margin ?? 0) < 0 && { color: colors.error }]}>
+                {mxn(data.margin ?? 0)}
+                {data.margin_pct !== null && data.margin_pct !== undefined ? ` · ${data.margin_pct}%` : ""}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.sub}>Solo el precio del servicio aparece en el PDF del caso.</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -76,4 +136,20 @@ const styles = StyleSheet.create({
   groupLabel: { color: colors.onSurface, fontFamily: font.semibold, fontSize: fontSize.sm },
   groupTotal: { color: colors.onSurface, fontFamily: font.monoSemibold, fontSize: fontSize.sm },
   item: { color: colors.onSurfaceSecondary, fontFamily: font.regular, fontSize: fontSize.sm, flexShrink: 1 },
+  priceRow: { flexDirection: "row", gap: spacing.sm },
+  input: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    color: colors.onSurface,
+    fontFamily: font.regular,
+    fontSize: fontSize.base,
+    backgroundColor: colors.surface,
+  },
+  saveBtn: { minHeight: 44, minWidth: 88, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.surfaceInverse, justifyContent: "center", alignItems: "center" },
+  saveText: { color: colors.onSurfaceInverse, fontFamily: font.semibold, fontSize: fontSize.sm },
 });
